@@ -19,7 +19,9 @@ def build_server() -> Server:
     db_path = os.environ.get(
         "LOGBOOK_DB_PATH", os.path.expanduser("~/.naturali/logbook.db")
     )
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    parent = os.path.dirname(db_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     db = LogbookDB(db_path)
     db.init_schema()
 

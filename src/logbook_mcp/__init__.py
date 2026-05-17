@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from logbook-mcp!")
+"""logbook-mcp: MCP server for sea-day capture and marked moments."""
