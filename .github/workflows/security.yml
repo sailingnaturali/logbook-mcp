@@ -1,0 +1,24 @@
+name: security
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  mcp-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install logbook-mcp
+        run: uv sync --all-extras --dev
+      - name: Install mcp-scanner
+        run: uv tool install --python 3.13 cisco-ai-mcp-scanner
+      - name: Scan project
+        run: |
+          uv tool run --from cisco-ai-mcp-scanner mcp-scanner \
+            --analyzers yara \
+            --format summary \
+            stdio --stdio-command uv --stdio-arg run --stdio-arg logbook-mcp
