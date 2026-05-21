@@ -7,6 +7,14 @@ from datetime import datetime, timezone
 from logbook_mcp.db import LogbookDB
 
 
+def _format_position(lat: float | None, lon: float | None) -> str | None:
+    if lat is None or lon is None:
+        return None
+    lat_dir = "North" if lat >= 0 else "South"
+    lon_dir = "East" if lon >= 0 else "West"
+    return f"{abs(lat):.4f} {lat_dir}, {abs(lon):.4f} {lon_dir}"
+
+
 def mark_moment(
     db: LogbookDB,
     text: str,
@@ -35,4 +43,5 @@ def mark_moment(
         "text": text,
         "timestamp": timestamp,
         "position": position,
+        "position_display": _format_position(lat, lon),
     }

@@ -46,6 +46,7 @@ def test_mark_moment_accepts_optional_position(db):
     )
     assert rows[0]["longitude"] == -123.27
     assert rows[0]["latitude"] == 48.42
+    assert result["position_display"] == "48.4200 North, 123.2700 West"
 
 
 def test_mark_moment_without_position_stores_nulls(db):
@@ -57,3 +58,4 @@ def test_mark_moment_without_position_stores_nulls(db):
     )
     assert rows[0]["longitude"] is None
     assert rows[0]["latitude"] is None
+    assert result["position_display"] is None
