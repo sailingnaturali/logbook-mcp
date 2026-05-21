@@ -39,9 +39,8 @@ def mark_moment(
         (text, timestamp, lon, lat),
     )
     return {
-        "id": moment_id,
+        "entry_display": f"Entry {moment_id}",
         "text": text,
         "timestamp": timestamp,
-        "position": position,
         "position_display": _format_position(lat, lon),
     }

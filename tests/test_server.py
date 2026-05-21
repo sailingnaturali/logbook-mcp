@@ -42,7 +42,7 @@ async def test_mark_moment_round_trip_through_server(tmp_db_path):
     assert len(content) == 1
     payload = json.loads(content[0].text)
     assert payload["text"] == "round-trip test"
-    assert "id" in payload
+    assert payload["entry_display"].startswith("Entry ")
     assert "timestamp" in payload
 
 
