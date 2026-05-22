@@ -15,8 +15,8 @@ def _utc_now_iso() -> str:
 def _format_position(lat: float | None, lon: float | None) -> str | None:
     if lat is None or lon is None:
         return None
-    lat_part = f"{abs(lat):.4f}" if lat == 0 else f"{abs(lat):.4f} {'North' if lat > 0 else 'South'}"
-    lon_part = f"{abs(lon):.4f}" if lon == 0 else f"{abs(lon):.4f} {'East' if lon > 0 else 'West'}"
+    lat_part = f"{abs(lat):.1f}" if lat == 0 else f"{abs(lat):.1f} {'North' if lat > 0 else 'South'}"
+    lon_part = f"{abs(lon):.1f}" if lon == 0 else f"{abs(lon):.1f} {'East' if lon > 0 else 'West'}"
     return f"{lat_part}, {lon_part}"
 
 

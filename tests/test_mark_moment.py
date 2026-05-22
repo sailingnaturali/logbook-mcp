@@ -47,7 +47,7 @@ def test_mark_moment_accepts_optional_position(db):
     assert rows[0]["longitude"] == -123.27
     assert rows[0]["latitude"] == 48.42
     assert result["position"] == {"longitude": -123.27, "latitude": 48.42}
-    assert result["position_display"] == "48.4200 North, 123.2700 West"
+    assert result["position_display"] == "48.4 North, 123.3 West"
 
 
 def test_mark_moment_without_position_stores_nulls(db):
@@ -69,7 +69,7 @@ def test_mark_moment_zero_coordinates_render_without_direction(db):
         text="Null Island",
         position={"longitude": 0, "latitude": 0},
     )
-    assert result["position_display"] == "0.0000, 0.0000"
+    assert result["position_display"] == "0.0, 0.0"
 
 
 def test_mark_moment_southern_western_hemisphere(db):
@@ -79,4 +79,4 @@ def test_mark_moment_southern_western_hemisphere(db):
         text="Cape Horn",
         position={"longitude": -67.27, "latitude": -55.98},
     )
-    assert result["position_display"] == "55.9800 South, 67.2700 West"
+    assert result["position_display"] == "56.0 South, 67.3 West"

@@ -65,7 +65,7 @@ def test_mark_moment_with_position_returns_display_fields(server):
     assert result["text"] == "Passed Active Pass, wind 15kt NW"
     assert result["timestamp"].endswith("Z")
     assert result["position"] == {"latitude": 48.8731, "longitude": -123.2837}
-    assert result["position_display"] == "48.8731 North, 123.2837 West"
+    assert result["position_display"] == "48.9 North, 123.3 West"
 
 
 def test_mark_moment_without_position_returns_null_display(server):
@@ -86,4 +86,4 @@ def test_southern_hemisphere_position_display(server):
         "text": "Arrived Grenada",
         "position": {"latitude": -12.0573, "longitude": -61.7517},
     })
-    assert result["position_display"] == "12.0573 South, 61.7517 West"
+    assert result["position_display"] == "12.1 South, 61.8 West"
