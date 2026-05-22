@@ -6,7 +6,9 @@ Part of the [Naturali](https://sailingnaturali.com) open-source boat agent stack
 
 ## Phase 0 status
 
-Minimal: `mark_moment(text)` only. SQLite-backed.
+Minimal: `mark_moment(text, position?)` — optional `{longitude, latitude}` payload. SQLite-backed.
+
+See [SPEC.md](SPEC.md) for the design contract and the Phase 0.5 plan.
 
 ## Phase 0.5+ roadmap
 

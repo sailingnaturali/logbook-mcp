@@ -7,7 +7,7 @@ Phase 0.5 adds sea_days and summaries.
 from __future__ import annotations
 
 import sqlite3
-from typing import Iterable
+from typing import Sequence
 
 
 class LogbookDB:
@@ -31,16 +31,19 @@ class LogbookDB:
             );
             """
         )
-        self._conn.commit()
 
-    def query(self, sql: str, params: Iterable = ()) -> list[sqlite3.Row]:
+    def query(self, sql: str, params: Sequence = ()) -> list[sqlite3.Row]:
         cur = self._conn.execute(sql, tuple(params))
         return cur.fetchall()
 
-    def execute(self, sql: str, params: Iterable = ()) -> int:
+    def insert(self, sql: str, params: Sequence = ()) -> int:
+        """Run an INSERT and return the new row id."""
         cur = self._conn.execute(sql, tuple(params))
         self._conn.commit()
-        return cur.lastrowid
+        row_id = cur.lastrowid
+        if row_id is None:
+            raise RuntimeError("INSERT did not return a lastrowid")
+        return row_id
 
     def close(self) -> None:
         self._conn.close()

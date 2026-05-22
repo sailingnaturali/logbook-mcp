@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from typing import Any
 
 import mcp.types as types
 from mcp.server import Server
@@ -14,8 +15,7 @@ from logbook_mcp.db import LogbookDB
 from logbook_mcp.tools import mark_moment
 
 
-def build_server() -> Server:
-    server = Server("logbook-mcp")
+def _default_db() -> LogbookDB:
     db_path = os.environ.get(
         "LOGBOOK_DB_PATH", os.path.expanduser("~/.naturali/logbook.db")
     )
@@ -24,6 +24,13 @@ def build_server() -> Server:
         os.makedirs(parent, exist_ok=True)
     db = LogbookDB(db_path)
     db.init_schema()
+    return db
+
+
+def build_server(db: LogbookDB | None = None) -> Server:
+    server = Server("logbook-mcp")
+    if db is None:
+        db = _default_db()
 
     @server.list_tools()
     async def _list_tools() -> list[types.Tool]:
@@ -33,13 +40,23 @@ def build_server() -> Server:
                 description="Record a marked moment in the logbook with optional position.",
                 inputSchema={
                     "type": "object",
+                    "additionalProperties": False,
                     "properties": {
-                        "text": {"type": "string"},
+                        "text": {"type": "string", "minLength": 1},
                         "position": {
                             "type": "object",
+                            "additionalProperties": False,
                             "properties": {
-                                "longitude": {"type": "number"},
-                                "latitude": {"type": "number"},
+                                "longitude": {
+                                    "type": "number",
+                                    "minimum": -180,
+                                    "maximum": 180,
+                                },
+                                "latitude": {
+                                    "type": "number",
+                                    "minimum": -90,
+                                    "maximum": 90,
+                                },
                             },
                             "required": ["longitude", "latitude"],
                         },
@@ -50,7 +67,7 @@ def build_server() -> Server:
         ]
 
     @server.call_tool()
-    async def _call_tool(name: str, args: dict) -> list[types.TextContent]:
+    async def _call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
         if name == "mark_moment":
             result = mark_moment(db, text=args["text"], position=args.get("position"))
         else:
@@ -61,7 +78,8 @@ def build_server() -> Server:
 
 
 def main() -> None:
-    server = build_server()
+    db = _default_db()
+    server = build_server(db=db)
 
     async def _run() -> None:
         async with stdio_server() as (read_stream, write_stream):
@@ -71,7 +89,10 @@ def main() -> None:
                 server.create_initialization_options(),
             )
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
