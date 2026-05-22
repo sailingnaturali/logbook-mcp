@@ -60,12 +60,12 @@ def test_mark_moment_with_position_returns_display_fields(server):
         "text": "Passed Active Pass, wind 15kt NW",
         "position": {"latitude": 48.8731, "longitude": -123.2837},
     })
+    assert result["id"] == 1
     assert result["entry_display"] == "Entry 1"
-    assert result["position_display"] == "48.8731 North, 123.2837 West"
     assert result["text"] == "Passed Active Pass, wind 15kt NW"
-    assert "timestamp" in result
-    assert "id" not in result
-    assert "position" not in result
+    assert result["timestamp"].endswith("Z")
+    assert result["position"] == {"latitude": 48.8731, "longitude": -123.2837}
+    assert result["position_display"] == "48.8731 North, 123.2837 West"
 
 
 def test_mark_moment_without_position_returns_null_display(server):
