@@ -24,8 +24,8 @@ tool shapes, DB schema, and acceptance criteria.
 
 - **Timestamps**: ISO 8601 UTC with `Z` suffix (e.g. `2026-05-21T20:37:00.123456Z`).
 - **Coordinates**: Decimal degrees. Latitude `[-90, 90]`, longitude `[-180, 180]`.
-  Storage uses SQLite `REAL`. Display formatting is `"{abs:.4f} {N|S}, {abs:.4f} {E|W}"`,
-  with zero values rendered without a direction (`"0.0000, 0.0000"`).
+  Storage uses SQLite `REAL`. Display formatting is `"{abs:.1f} {N|S}, {abs:.1f} {E|W}"`,
+  with zero values rendered without a direction (`"0.0, 0.0"`).
 - **IDs**: Every persisted row exposes both a raw integer `id` (for
   programmatic reference) and a `*_display` string (for human/LLM surfaces).
 - **Errors**: Returned as MCP tool errors (`isError: true`). Input validation
@@ -69,7 +69,7 @@ Record a free-form marked moment, optionally with a position.
   "text": "Beautiful sunset off Discovery Island",
   "timestamp": "2026-05-21T20:37:00.123456Z",
   "position": { "longitude": -123.27, "latitude": 48.42 },
-  "position_display": "48.4200 North, 123.2700 West"
+  "position_display": "48.4 North, 123.3 West"
 }
 ```
 
