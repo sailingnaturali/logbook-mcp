@@ -1,8 +1,13 @@
 """Integration smoke test against the real Pi.
 
-Skipped unless LOGBOOK_INTEGRATION=1. Requires LOGBOOK_SK_TOKEN with write
-access on the Pi's SignalK. NOTE: Phase 0 vessel data is fully mocked —
+Skipped unless LOGBOOK_INTEGRATION=1. Requires LOGBOOK_SK_TOKEN (an *admin*
+user token) on the Pi's SignalK. NOTE: Phase 0 vessel data is fully mocked —
 position will be the fixed Boundary Pass fix; that is expected.
+
+Known transient: for ~16 minutes after a SignalK server restart, the plugin's
+state buffer can serve a pre-first-delta snapshot, so the position assertion
+below may fail right after a restart. Re-run; it self-heals as the buffer
+rolls (observed 2026-06-06).
 """
 
 import os
