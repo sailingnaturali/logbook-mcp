@@ -1,5 +1,6 @@
 import json
 
+import httpx
 import pytest
 import respx
 from mcp.shared.memory import create_connected_server_and_client_session
@@ -92,10 +93,21 @@ async def test_read_entries_rejects_malformed_date(lb_client):
 
 @respx.mock
 async def test_unreachable_pi_surfaces_as_tool_error(lb_client):
-    import httpx
     respx.post(f"{API}/logs").mock(side_effect=httpx.ConnectError("boom"))
     server = build_server(lb_client)
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("mark_moment", {"text": "x"})
         assert result.isError
         assert "NOT recorded" in result.content[0].text
+
+
+@respx.mock
+async def test_read_entries_unreachable_surfaces_as_tool_error(lb_client):
+    respx.get(url__regex=rf"{API}/logs/\d{{4}}-\d{{2}}-\d{{2}}$").mock(
+        side_effect=httpx.ConnectError("boom")
+    )
+    server = build_server(lb_client)
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool("read_entries", {"date": "2026-06-05"})
+        assert result.isError
+        assert "SignalK" in result.content[0].text
