@@ -1,20 +1,15 @@
 # logbook-mcp
 
-An MCP server for sea-day capture, marked moments, and license sea-time form export.
+A thin MCP over [meri-imperiumi/signalk-logbook](https://github.com/meri-imperiumi/signalk-logbook) — the ship's log lives on the SignalK server as per-day YAML.
 
 Part of the [Naturali](https://sailingnaturali.com) open-source boat agent stack.
 
-## Phase 0 status
+**Requires signalk-logbook installed and enabled on the SignalK server.**
 
-Minimal: `mark_moment(text, position?)` — optional `{longitude, latitude}` payload. SQLite-backed.
+## Tools
 
-See [SPEC.md](SPEC.md) for the design contract and the Phase 0.5 plan.
-
-## Phase 0.5+ roadmap
-
-- `record_sea_day(start, end, role, vessel, conditions)`
-- `export_uscg_form()`, `export_tc_form()`
-- `draft_summary(day_id)`
+- `mark_moment(text, position?)` — record a moment in the ship's log; position, speed, wind, and barometer are auto-enriched server-side from the vessel's sensors; `position` only needed to override the GPS fix.
+- `read_entries(date?)` — read a day's log entries (default: today, vessel-local).
 
 ## Installation
 
@@ -25,9 +20,17 @@ uv tool install logbook-mcp
 ## Configuration
 
 ```bash
-export LOGBOOK_DB_PATH=~/.naturali/logbook.db
+export LOGBOOK_SK_URL=http://naturalaspi.local:3000   # SignalK server root
+export LOGBOOK_SK_TOKEN=...                            # SignalK access token (write)
+export LOGBOOK_TZ=America/Vancouver                    # fallback timezone
 logbook-mcp
 ```
+
+## Roadmap
+
+Sea-time derivation and USCG/TC sea-service form exports are planned for Phase 0.5. Rather than maintaining a parallel store, `export_uscg_form` / `export_tc_form` will derive sea days by scanning signalk-logbook entries, and `draft_summary` will read entries by date range. See [docs/superpowers/specs/2026-06-05-adopt-signalk-logbook-design.md](docs/superpowers/specs/2026-06-05-adopt-signalk-logbook-design.md) for the design.
+
+See [SPEC.md](SPEC.md) for the full tool contract.
 
 ## License
 

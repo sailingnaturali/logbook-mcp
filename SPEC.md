@@ -3,7 +3,7 @@
 This document is the design contract for the `logbook-mcp` MCP server. It
 covers the shipped Phase 0 surface and the planned Phase 0.5 surface. The
 README is the marketing/quickstart view; this file is the source of truth for
-tool shapes, DB schema, and acceptance criteria.
+tool shapes, behavior contracts, and acceptance criteria.
 
 ## Goals
 
@@ -11,34 +11,39 @@ tool shapes, DB schema, and acceptance criteria.
    ideally one MCP call at a time, from a voice or chat client.
 2. Produce a defensible audit trail that maps cleanly onto USCG and Transport
    Canada sea-service documentation requirements.
-3. Stay local-first: a single SQLite file under `LOGBOOK_DB_PATH` (default
-   `~/.naturali/logbook.db`).
+3. The log lives on the boat: `signalk-logbook` owns storage (per-day YAML on
+   the SignalK server). `logbook-mcp` itself is stateless — it is a thin HTTP
+   client with no local database.
 
 ## Non-goals (for now)
 
 - Multi-user / cloud sync.
 - Vessel-tracking, AIS feeds, or real-time chart overlay.
-- Anything that requires a network call from the server process.
+- Offline queueing for `mark_moment`.
+- Entry edit or delete tools — humans curate via the SignalK admin UI.
 
 ## Conventions
 
 - **Timestamps**: ISO 8601 UTC with `Z` suffix (e.g. `2026-05-21T20:37:00.123456Z`).
 - **Coordinates**: Decimal degrees. Latitude `[-90, 90]`, longitude `[-180, 180]`.
-  Storage uses SQLite `REAL`. Display formatting is `"{abs:.1f} {N|S}, {abs:.1f} {E|W}"`,
+  Display formatting is `"{abs:.1f} {North|South}, {abs:.1f} {East|West}"`,
   with zero values rendered without a direction (`"0.0, 0.0"`).
-- **IDs**: Every persisted row exposes both a raw integer `id` (for
-  programmatic reference) and a `*_display` string (for human/LLM surfaces).
+- **IDs**: `id` is the entry's datetime key (a string, e.g.
+  `"2026-06-05T18:32:00Z"`). `entry_display` is `"Entry {n}"` where `n` is
+  the entry's 1-based ordinal within its day.
 - **Errors**: Returned as MCP tool errors (`isError: true`). Input validation
   is delegated to MCP's `inputSchema` validator (jsonschema); domain errors
   raise from the tool function.
 
-## Phase 0 — shipped
+## Phase 0 — shipped (0.2.0)
 
 ### Tool: `mark_moment`
 
-Record a free-form marked moment, optionally with a position.
+Record a moment in the ship's log via signalk-logbook. Position, speed, wind,
+and barometer are captured automatically from the vessel's sensors. Pass
+`position` only to override the GPS fix.
 
-**Input**
+**Input schema** (from `src/logbook_mcp/server.py`)
 
 ```json
 {
@@ -60,97 +65,140 @@ Record a free-form marked moment, optionally with a position.
 }
 ```
 
-**Output** (JSON text content)
+**Response** (JSON text content)
 
 ```json
 {
-  "id": 42,
-  "entry_display": "Entry 42",
+  "id": "2026-06-05T18:32:00Z",
+  "entry_display": "Entry 3",
   "text": "Beautiful sunset off Discovery Island",
-  "timestamp": "2026-05-21T20:37:00.123456Z",
+  "timestamp": "2026-06-05T18:32:00Z",
+  "time_display": "11:32",
   "position": { "longitude": -123.27, "latitude": 48.42 },
   "position_display": "48.4 North, 123.3 West"
 }
 ```
 
-`position` and `position_display` are `null` when no position was supplied.
+- `id` — the entry's datetime key (string); its REST identity in signalk-logbook.
+- `entry_display` — `"Entry {n}"` where `n` is the 1-based ordinal within the day.
+- `time_display` — vessel-local wall-clock time (`HH:MM`), derived from the
+  entry's own position via `timezonefinder` + `zoneinfo`; falls back to
+  `LOGBOOK_TZ` when the entry has no position.
+- `position` and `position_display` are `null` when no fix is available.
+
+**POST → re-fetch dance**
+
+`POST /logs` returns a bare `201` with no body. The tool re-fetches the day's
+entries (`GET /logs/{today}`) and identifies the just-created entry as the
+newest-by-datetime. If the UTC clock rolled past midnight between POST and
+re-fetch, the entry may be in the previous day's file — the tool checks that
+day before giving up.
+
+**Position override**
+
+When `position` is explicitly supplied, after the POST → re-fetch the tool
+issues a `PUT` to patch the entry with `source: "manual"`, overriding the
+snapshotted GPS fix.
+
+**Error-honesty rules** (verbatim from the design spec)
+
+- Pi unreachable / timeout before POST completes: tool error stating the
+  moment was **NOT recorded** — no silent failure.
+- 401/403 at any point: error message names `LOGBOOK_SK_TOKEN` so it is
+  immediately actionable.
+- Post-write confirmation failures (re-fetch or PUT errors): error states the
+  entry **was recorded but could not be confirmed**; advise the user to check
+  via `read_entries`.
+- Non-2xx on any call: surfaced as a tool error with the HTTP status and URL.
 
 **Acceptance criteria**
 
-- Row appears in `marked_moments` with all four fields populated (or NULLs
-  for missing coordinates).
-- Response includes both `id` and `entry_display`; `entry_display` is exactly
-  `"Entry {id}"`.
+- Entry appears in signalk-logbook for the correct day.
+- Response includes `id` (datetime string), `entry_display` (`"Entry {n}"`),
+  `time_display` (vessel-local HH:MM), `timestamp`, `position`, and
+  `position_display`.
 - Out-of-range coordinates and empty `text` are rejected by the MCP validator
   before the handler runs.
+- When `position` is supplied, a PUT is issued and the response reflects the
+  overridden coordinates with `source: "manual"`.
 
-### Schema: `marked_moments`
+---
 
-```sql
-CREATE TABLE IF NOT EXISTS marked_moments (
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    text      TEXT    NOT NULL,
-    timestamp TEXT    NOT NULL,
-    longitude REAL,
-    latitude  REAL
-);
-```
+### Tool: `read_entries`
 
-## Phase 0.5 — planned
+Read a day's log entries. Defaults to today in vessel-local time (current GPS
+fix → `timezonefinder`; falls back to `LOGBOOK_TZ`).
 
-Goal: enough surface for an LLM agent to record a full sea-day end-to-end and
-draft a human-reviewable summary that maps onto USCG sea-service form fields.
-
-### Tool: `record_sea_day`
-
-Capture a single sea-day record. Days are the atomic unit USCG/TC count.
-
-**Input** (sketch — to be refined)
+**Input schema** (from `src/logbook_mcp/server.py`)
 
 ```json
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["date", "vessel", "role"],
   "properties": {
-    "date":       { "type": "string", "format": "date" },
-    "vessel":     { "type": "string", "minLength": 1 },
-    "role":       { "type": "string", "enum": ["master", "mate", "crew", "deckhand"] },
-    "start":      { "type": "string", "format": "date-time" },
-    "end":        { "type": "string", "format": "date-time" },
-    "hours":      { "type": "number", "minimum": 0, "maximum": 24 },
-    "conditions": { "type": "string" },
-    "departed":   { "type": "string" },
-    "arrived":    { "type": "string" },
-    "notes":      { "type": "string" }
+    "date": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
   }
 }
 ```
 
-**Open questions** (to resolve before implementing)
+**Response**
 
-- USCG counts a "day" as 4+ hours underway. TC has its own rules. Should the
-  schema enforce the 4-hour minimum, or warn?
-- How are tied-up / dockside days represented? Separate tool, or a flag?
-- Vessel: free-text vs. lookup against a `vessels` table.
+```json
+{
+  "date": "2026-06-05",
+  "count": 3,
+  "entries": [
+    {
+      "id": "2026-06-05T14:00:00Z",
+      "entry_display": "Entry 1",
+      "time_display": "07:00",
+      "text": "Departed Tsawwassen",
+      "category": "navigation",
+      "author": null,
+      "position": { "longitude": -123.13, "latitude": 49.01 },
+      "position_display": "49.0 North, 123.1 West"
+    }
+  ]
+}
+```
 
-### Tool: `draft_summary`
+Each entry includes `id`, `entry_display`, `time_display` (vessel-local HH:MM),
+`text`, `category`, `author`, `position`, and `position_display`. Entries are
+sorted ascending by datetime. `position` and `position_display` are `null` when
+no fix is recorded for that entry.
 
-Given a `sea_day` id, draft a narrative summary suitable for a logbook entry,
-combining the day's structured fields with any `mark_moment` entries whose
-timestamp falls inside `[start, end]`.
+---
 
-**Input**: `{ "day_id": int }`
-**Output**: `{ "summary": str, "moment_ids": int[] }`
+## Phase 0.5 — planned
 
-Idempotent: re-running overwrites the stored summary.
+Goal: enough surface for an LLM agent to produce a human-reviewable sea-time
+summary that maps onto USCG sea-service form fields.
 
-### Tool: `export_uscg_form`
+### Sea-time layer
 
-Render a USCG sea-service form (CG-719S or successor) from `sea_days` in a
-date range.
+`record_sea_day` and its parallel SQLite store are **not built**. Instead,
+`export_uscg_form` / `export_tc_form` will *derive* sea days by scanning
+signalk-logbook entries (trip start/end markers and hourly underway entries
+from `signalk-autostate` are exactly the evidence a sea-service form needs).
+Role and vessel are supplied at export time. One source of truth: the
+signalk-logbook YAML on the Pi.
 
-**Input** (sketch)
+`draft_summary` likewise reads entries by date range (via `read_entries`)
+rather than joining database tables.
+
+This approach is the only genuinely novel layer we maintain; the export logic
+references the same design spec:
+[docs/superpowers/specs/2026-06-05-adopt-signalk-logbook-design.md](docs/superpowers/specs/2026-06-05-adopt-signalk-logbook-design.md).
+
+### Tool: `export_uscg_form` (sketch)
+
+Derive USCG CG-719S sea-service data from signalk-logbook entries in a date
+range.
+
+**Input** (to be refined)
 
 ```json
 {
@@ -160,6 +208,7 @@ date range.
     "start_date": { "type": "string", "format": "date" },
     "end_date":   { "type": "string", "format": "date" },
     "vessel":     { "type": "string" },
+    "role":       { "type": "string", "enum": ["master", "mate", "crew", "deckhand"] },
     "format":     { "type": "string", "enum": ["pdf", "csv", "json"], "default": "csv" }
   }
 }
@@ -167,57 +216,34 @@ date range.
 
 **Output**: a path on disk (or base64 blob) plus a row-count summary.
 
-### Tool: `export_tc_form`
+### Tool: `export_tc_form` (sketch)
 
 Same as `export_uscg_form` but emits Transport Canada's sea-service form
-layout (TBD which form).
+layout (form TBD).
 
-### Schema additions: `sea_days`, `summaries`
+### Tool: `draft_summary` (sketch)
 
-```sql
-CREATE TABLE IF NOT EXISTS sea_days (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    date       TEXT    NOT NULL,           -- YYYY-MM-DD
-    vessel     TEXT    NOT NULL,
-    role       TEXT    NOT NULL,
-    start_ts   TEXT,                       -- ISO 8601 Z
-    end_ts     TEXT,
-    hours      REAL,
-    conditions TEXT,
-    departed   TEXT,
-    arrived    TEXT,
-    notes      TEXT,
-    created_at TEXT    NOT NULL
-);
+Given a date range, draft a narrative summary combining entries for human
+review. Reads entries via `read_entries` rather than joining database tables.
 
-CREATE TABLE IF NOT EXISTS summaries (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    day_id     INTEGER NOT NULL REFERENCES sea_days(id) ON DELETE CASCADE,
-    summary    TEXT    NOT NULL,
-    created_at TEXT    NOT NULL,
-    UNIQUE (day_id)
-);
-```
+**Input** (sketch): `{ "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD" }`
+**Output**: `{ "summary": str, "entry_count": int }`
 
-A future migration may add a `day_id` foreign key on `marked_moments` once the
-"which moments belong to which day" question is settled — for now the link is
-computed at summary-draft time via timestamp range.
+---
 
 ## Versioning policy
 
-- `0.1.x` — Phase 0 only.
-- `0.2.0` — first Phase 0.5 tool lands (`record_sea_day`).
-- `1.0.0` — full Phase 0.5 surface stable; `export_*` tools have passed at
-  least one real sea-service submission.
-
-Schema migrations: every change to a table ships with an idempotent `ALTER
-TABLE` or `CREATE TABLE` in `LogbookDB.init_schema()`. Rows are never
-backfilled destructively without an explicit migration tool.
+- `0.1.x` — SQLite Phase 0 (historical; `mark_moment` only, no REST backend).
+- `0.2.0` — REST backend over signalk-logbook; `mark_moment` and `read_entries`
+  shipped; `LOGBOOK_DB_PATH` retired.
+- `1.0.0` — sea-time export surface (`export_uscg_form` / `export_tc_form`)
+  stable after at least one real sea-service submission.
 
 ## Open design questions
 
-- Should `mark_moment` allow attaching a `day_id` at creation time, or always
-  resolve via timestamp?
-- Do we want a `redact_moment(id)` tool, or is deletion enough?
-- Should the server expose resources (e.g. `logbook://days/2026-05-21`) in
-  addition to tools, so clients can browse without a tool call?
+- Should `mark_moment` accept a `category` parameter, or always default to
+  `"navigation"`?
+- Do we want a `redact_moment(id)` tool, or is curation always via the
+  SignalK admin UI?
+- Should the server expose MCP resources (e.g. `logbook://days/2026-05-21`)
+  so clients can browse without a tool call?
