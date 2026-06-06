@@ -4,6 +4,10 @@ A thin MCP over [meri-imperiumi/signalk-logbook](https://github.com/meri-imperiu
 
 Part of the [Naturali](https://sailingnaturali.com) open-source boat agent stack.
 
+Why we deleted our own SQLite logbook and adopted signalk-logbook instead — the
+ecosystem audit, the decision, and the integration quirks:
+[the full story on the engineering blog](https://engineering.sailingnaturali.com/adopt-vs-build-ships-log-signalk-logbook-mcp/).
+
 **Requires signalk-logbook installed and enabled on the SignalK server.**
 
 ## Tools
@@ -26,12 +30,11 @@ export LOGBOOK_TZ=America/Vancouver                    # fallback timezone
 logbook-mcp
 ```
 
-Replace `naturalaspi.local` with your SignalK server's hostname. Create the
-access token in the SignalK admin UI (Security → Access Requests / Tokens)
-for an **admin** user — without it, writes fail with an error naming
-`LOGBOOK_SK_TOKEN`. The token must belong to an **admin** user — signalk-server
-gates all `/plugins/*` routes behind admin auth (`adminAuthenticationMiddleware`
-in `tokensecurity.ts`); device tokens and read/write user tokens receive 401.
+Replace `naturalaspi.local` with your SignalK server's hostname. The token must
+belong to an **admin** user — signalk-server gates all `/plugins/*` routes behind
+admin auth (`adminAuthenticationMiddleware` in `tokensecurity.ts`), so device
+tokens and read/write user tokens receive 401. Without a valid token, writes
+fail with an error naming `LOGBOOK_SK_TOKEN`.
 
 ## Roadmap
 
