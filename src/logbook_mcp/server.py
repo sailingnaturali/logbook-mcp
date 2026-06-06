@@ -1,4 +1,4 @@
-"""Logbook MCP server."""
+"""Logbook MCP server — thin surface over signalk-logbook on the Pi."""
 
 from __future__ import annotations
 
@@ -11,33 +11,30 @@ import mcp.types as types
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
-from logbook_mcp.db import LogbookDB
-from logbook_mcp.tools import mark_moment
+from logbook_mcp.client import LogbookClient
+from logbook_mcp.tools import mark_moment, read_entries
 
 
-def _default_db() -> LogbookDB:
-    db_path = os.environ.get(
-        "LOGBOOK_DB_PATH", os.path.expanduser("~/.naturali/logbook.db")
-    )
-    parent = os.path.dirname(db_path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    db = LogbookDB(db_path)
-    db.init_schema()
-    return db
+def _env_config() -> tuple[str, str | None, str]:
+    url = os.environ.get("LOGBOOK_SK_URL", "http://naturalaspi.local:3000")
+    token = os.environ.get("LOGBOOK_SK_TOKEN")
+    tz = os.environ.get("LOGBOOK_TZ", "America/Vancouver")
+    return url, token, tz
 
 
-def build_server(db: LogbookDB | None = None) -> Server:
+def build_server(client: LogbookClient, fallback_tz: str = "America/Vancouver") -> Server:
     server = Server("logbook-mcp")
-    if db is None:
-        db = _default_db()
 
     @server.list_tools()
     async def _list_tools() -> list[types.Tool]:
         return [
             types.Tool(
                 name="mark_moment",
-                description="Record a marked moment in the logbook with optional position.",
+                description=(
+                    "Record a moment in the ship's log. Position, speed, wind, "
+                    "and barometer are captured automatically from the vessel's "
+                    "sensors; pass position only to override the GPS fix."
+                ),
                 inputSchema={
                     "type": "object",
                     "additionalProperties": False,
@@ -64,12 +61,38 @@ def build_server(db: LogbookDB | None = None) -> Server:
                     "required": ["text"],
                 },
             ),
+            types.Tool(
+                name="read_entries",
+                description=(
+                    "Read the ship's log entries for a day "
+                    "(default: today, vessel-local)."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "date": {
+                            "type": "string",
+                            "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                        },
+                    },
+                },
+            ),
         ]
 
     @server.call_tool()
     async def _call_tool(name: str, args: dict[str, Any]) -> list[types.TextContent]:
         if name == "mark_moment":
-            result = mark_moment(db, text=args["text"], position=args.get("position"))
+            result = await mark_moment(
+                client,
+                text=args["text"],
+                position=args.get("position"),
+                fallback_tz=fallback_tz,
+            )
+        elif name == "read_entries":
+            result = await read_entries(
+                client, date=args.get("date"), fallback_tz=fallback_tz
+            )
         else:
             raise ValueError(f"Unknown tool: {name}")
         return [types.TextContent(type="text", text=json.dumps(result, indent=2))]
@@ -78,21 +101,22 @@ def build_server(db: LogbookDB | None = None) -> Server:
 
 
 def main() -> None:
-    db = _default_db()
-    server = build_server(db=db)
+    url, token, tz = _env_config()
+    client = LogbookClient(url, token=token)
+    server = build_server(client, fallback_tz=tz)
 
     async def _run() -> None:
-        async with stdio_server() as (read_stream, write_stream):
-            await server.run(
-                read_stream,
-                write_stream,
-                server.create_initialization_options(),
-            )
+        try:
+            async with stdio_server() as (read_stream, write_stream):
+                await server.run(
+                    read_stream,
+                    write_stream,
+                    server.create_initialization_options(),
+                )
+        finally:
+            await client.aclose()
 
-    try:
-        asyncio.run(_run())
-    finally:
-        db.close()
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":
