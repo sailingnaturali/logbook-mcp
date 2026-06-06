@@ -1,0 +1,90 @@
+import httpx
+import pytest
+import respx
+
+from logbook_mcp.client import LogbookClient
+
+BASE = "http://test-sk:3000"
+API = f"{BASE}/plugins/signalk-logbook"
+
+ENTRY = {
+    "datetime": "2026-06-05T18:32:00.000Z",
+    "position": {"latitude": 48.42, "longitude": -123.27, "source": "GPS"},
+    "text": "Beautiful sunset off Discovery Island",
+    "author": "naturali",
+    "category": "navigation",
+}
+
+
+@pytest.fixture
+async def client():
+    c = LogbookClient(BASE, token="test-token")
+    yield c
+    await c.aclose()
+
+
+@respx.mock
+async def test_get_entries_returns_day_list(client):
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[ENTRY])
+    entries = await client.get_entries("2026-06-05")
+    assert entries == [ENTRY]
+
+
+@respx.mock
+async def test_get_entries_sends_bearer_token(client):
+    route = respx.get(f"{API}/logs/2026-06-05").respond(200, json=[])
+    await client.get_entries("2026-06-05")
+    assert route.calls[0].request.headers["authorization"] == "Bearer test-token"
+
+
+@respx.mock
+async def test_get_entries_404_means_empty_day(client):
+    respx.get(f"{API}/logs/2026-06-05").respond(404)
+    assert await client.get_entries("2026-06-05") == []
+
+
+async def test_get_entries_rejects_malformed_date(client):
+    with pytest.raises(ValueError, match="invalid date"):
+        await client.get_entries("../../etc/passwd")
+
+
+@respx.mock
+async def test_post_entry_sends_text_json(client):
+    route = respx.post(f"{API}/logs").respond(201)
+    await client.post_entry("Sunset off Discovery Island")
+    import json
+    assert json.loads(route.calls[0].request.content) == {
+        "text": "Sunset off Discovery Island"
+    }
+
+
+@respx.mock
+async def test_put_entry_urlencodes_datetime_key(client):
+    route = respx.put(
+        f"{API}/logs/2026-06-05/2026-06-05T18%3A32%3A00.000Z"
+    ).respond(200)
+    await client.put_entry("2026-06-05", "2026-06-05T18:32:00.000Z", ENTRY)
+    assert route.called
+
+
+@respx.mock
+async def test_get_position_returns_fix(client):
+    respx.get(f"{BASE}/signalk/v1/api/vessels/self/navigation/position").respond(
+        200, json={"value": {"latitude": 48.76, "longitude": -123.05}}
+    )
+    pos = await client.get_position()
+    assert pos == {"latitude": 48.76, "longitude": -123.05}
+
+
+@respx.mock
+async def test_get_position_none_on_404(client):
+    respx.get(f"{BASE}/signalk/v1/api/vessels/self/navigation/position").respond(404)
+    assert await client.get_position() is None
+
+
+@respx.mock
+async def test_get_position_none_on_connect_error(client):
+    respx.get(f"{BASE}/signalk/v1/api/vessels/self/navigation/position").mock(
+        side_effect=httpx.ConnectError("boom")
+    )
+    assert await client.get_position() is None
