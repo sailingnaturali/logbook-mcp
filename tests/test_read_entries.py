@@ -49,6 +49,8 @@ async def test_read_entries_explicit_date(client):
     assert result["count"] == 2
     first, second = result["entries"]
     assert first["entry_display"] == "Entry 1"
+    # 14:00Z → 07:00 PDT: timezonefinder resolves (48.70, -123.20) to
+    # America/Vancouver — real geographic data, not an arbitrary constant.
     assert first["time_display"] == "07:00"
     assert second["entry_display"] == "Entry 2"
     assert second["id"] == "2026-06-05T18:32:00.000Z"
@@ -88,6 +90,21 @@ async def test_read_entries_empty_day(client):
     respx.get(f"{API}/logs/2026-06-05").respond(404)
     result = await read_entries(client, date="2026-06-05")
     assert result == {"date": "2026-06-05", "count": 0, "entries": []}
+
+
+@respx.mock
+async def test_read_entries_tolerates_entry_missing_datetime(client):
+    # A malformed entry (no datetime) must not crash the whole day read.
+    malformed = {"text": "corrupt entry", "category": "navigation"}
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[malformed])
+
+    result = await read_entries(client, date="2026-06-05")
+
+    assert result["count"] == 1
+    entry = result["entries"][0]
+    assert entry["id"] == ""
+    assert entry["time_display"] is None
+    assert entry["text"] == "corrupt entry"
 
 
 @respx.mock

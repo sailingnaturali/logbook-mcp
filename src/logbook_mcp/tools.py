@@ -200,6 +200,7 @@ async def read_entries(
     raw.sort(key=lambda e: e.get("datetime", ""))
     entries = []
     for n, e in enumerate(raw, start=1):
+        dt_str = e.get("datetime", "")
         pos = e.get("position") or None
         # A partial fix (only one of lat/lon present) counts as no fix.
         pos_out = (
@@ -209,9 +210,9 @@ async def read_entries(
         )
         entries.append(
             {
-                "id": e.get("datetime", ""),
+                "id": dt_str,
                 "entry_display": f"Entry {n}",
-                "time_display": _time_display(e["datetime"], pos_out, fallback_tz),
+                "time_display": _time_display(dt_str, pos_out, fallback_tz) if dt_str else None,
                 "text": e.get("text", ""),
                 "category": e.get("category", "navigation"),
                 "author": e.get("author"),
