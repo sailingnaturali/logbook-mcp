@@ -163,3 +163,63 @@ async def mark_moment(
             pos_out["longitude"] if pos_out else None,
         ),
     }
+
+
+async def read_entries(
+    client: LogbookClient,
+    date: str | None = None,
+    fallback_tz: str = "America/Vancouver",
+    now: datetime | None = None,
+) -> dict:
+    """Read a day's log entries (default: today in vessel-local time).
+
+    The default date resolves via the current GPS fix → timezone; if there is
+    no fix, ``fallback_tz`` decides what "today" means.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if date is None:
+        fix = await client.get_position()
+        tz = _entry_timezone(fix, fallback_tz)
+        date = now.astimezone(tz).date().isoformat()
+
+    try:
+        raw = await client.get_entries(date)
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        raise RuntimeError(
+            f"Logbook unavailable: cannot reach SignalK at {client.base_url}"
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        auth = _auth_error(exc, client.base_url)
+        if auth:
+            raise auth from exc
+        raise RuntimeError(
+            f"Logbook read failed (HTTP {exc.response.status_code})"
+        ) from exc
+
+    raw.sort(key=lambda e: e.get("datetime", ""))
+    entries = []
+    for n, e in enumerate(raw, start=1):
+        pos = e.get("position") or None
+        # A partial fix (only one of lat/lon present) counts as no fix.
+        pos_out = (
+            {"longitude": pos["longitude"], "latitude": pos["latitude"]}
+            if pos and pos.get("latitude") is not None
+            else None
+        )
+        entries.append(
+            {
+                "id": e.get("datetime", ""),
+                "entry_display": f"Entry {n}",
+                "time_display": _time_display(e["datetime"], pos_out, fallback_tz),
+                "text": e.get("text", ""),
+                "category": e.get("category", "navigation"),
+                "author": e.get("author"),
+                "position": pos_out,
+                "position_display": _format_position(
+                    pos_out["latitude"] if pos_out else None,
+                    pos_out["longitude"] if pos_out else None,
+                ),
+            }
+        )
+    return {"date": date, "count": len(entries), "entries": entries}
