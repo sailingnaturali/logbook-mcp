@@ -131,3 +131,21 @@ async def test_mark_moment_post_ok_but_confirm_failed_is_honest(client):
     respx.get(f"{API}/logs/2026-06-05").mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(RuntimeError, match="recorded but could not be confirmed"):
         await mark_moment(client, text="x", now=NOW)
+
+
+@respx.mock
+async def test_mark_moment_put_failure_after_post_is_honest(client):
+    # POST and re-fetch succeeded; the position-override PUT failed.
+    # The moment WAS recorded — the error must not claim otherwise.
+    respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[CREATED])
+    respx.put(
+        f"{API}/logs/2026-06-05/2026-06-05T18%3A32%3A00.000Z"
+    ).respond(500)
+    with pytest.raises(RuntimeError, match="recorded but could not be confirmed"):
+        await mark_moment(
+            client,
+            text="x",
+            position={"longitude": -123.30, "latitude": 48.45},
+            now=NOW,
+        )

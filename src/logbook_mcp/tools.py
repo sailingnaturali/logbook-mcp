@@ -75,7 +75,14 @@ async def _newest_entry(
     for day in (now.date(), now.date() - timedelta(days=1)):
         entries = await client.get_entries(day.isoformat())
         if entries:
-            entries.sort(key=lambda e: e["datetime"])
+            # Identity assumption: the entry we just POSTed is the
+            # newest-by-datetime in its day. This breaks if a later-dated
+            # entry already exists (manual backfill, clock skew) or if a
+            # concurrent auto-entry lands between POST and re-fetch —
+            # revisit when signalk-autostate is installed (hourly
+            # underway entries). e.get() guards a malformed entry missing
+            # "datetime" from leaking KeyError past our error wrapping.
+            entries.sort(key=lambda e: e.get("datetime", ""))
             return entries[-1], len(entries)
     raise RuntimeError(
         "Logbook entry was recorded but could not be confirmed: "
@@ -138,6 +145,7 @@ async def mark_moment(
         ) from exc
 
     pos = entry.get("position") or None
+    # A partial fix (only one of lat/lon present) counts as no fix.
     pos_out = (
         {"longitude": pos["longitude"], "latitude": pos["latitude"]}
         if pos and pos.get("latitude") is not None
