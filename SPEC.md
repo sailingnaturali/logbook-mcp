@@ -94,6 +94,15 @@ newest-by-datetime. If the UTC clock rolled past midnight between POST and
 re-fetch, the entry may be in the previous day's file — the tool checks that
 day before giving up.
 
+The client always sends `ago: 0` in the POST body — the plugin calls
+`buffer.get(req.body.ago)` whenever its state buffer is non-empty, and omitting
+the field causes an HTTP 500 once the buffer has been populated (verified live).
+
+The access token is sent both as an `Authorization: Bearer` header (required by
+signalk-server's admin gate) **and** as a `JAUTHENTICATION` cookie (required by
+the plugin, which calls `parseJwt(req.cookies.JAUTHENTICATION).id` to derive the
+entry author). Both must be present for writes to succeed.
+
 **Position override**
 
 When `position` is explicitly supplied, after the POST → re-fetch the tool
@@ -105,7 +114,10 @@ snapshotted GPS fix.
 - Pi unreachable / timeout before POST completes: tool error stating the
   moment was **NOT recorded** — no silent failure.
 - 401/403 at any point: error message names `LOGBOOK_SK_TOKEN` so it is
-  immediately actionable.
+  immediately actionable. The token must belong to an **admin** user —
+  signalk-server gates all `/plugins/*` routes behind admin auth
+  (`tokensecurity.ts adminAuthenticationMiddleware`); device tokens and
+  read/write user tokens receive 401.
 - Post-write confirmation failures (re-fetch or PUT errors): error states the
   entry **was recorded but could not be confirmed**; advise the user to check
   via `read_entries`.

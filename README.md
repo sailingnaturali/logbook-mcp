@@ -29,7 +29,9 @@ logbook-mcp
 Replace `naturalaspi.local` with your SignalK server's hostname. Create the
 access token in the SignalK admin UI (Security → Access Requests / Tokens)
 with read/write permission — without it, writes fail with an error naming
-`LOGBOOK_SK_TOKEN`.
+`LOGBOOK_SK_TOKEN`. The token must belong to an **admin** user — signalk-server
+gates all `/plugins/*` routes behind admin auth (`adminAuthenticationMiddleware`
+in `tokensecurity.ts`); device tokens and read/write user tokens receive 401.
 
 ## Roadmap
 

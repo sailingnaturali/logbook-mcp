@@ -48,7 +48,8 @@ async def test_mark_moment_posts_text_and_returns_contract(client):
     )
 
     assert json.loads(post.calls[0].request.content) == {
-        "text": "Beautiful sunset off Discovery Island"
+        "text": "Beautiful sunset off Discovery Island",
+        "ago": 0,
     }
     assert result["id"] == "2026-06-05T18:32:00.000Z"
     assert result["entry_display"] == "Entry 2"  # 2nd entry of the day

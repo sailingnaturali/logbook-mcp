@@ -40,6 +40,15 @@ async def test_get_entries_sends_bearer_token(client):
 
 
 @respx.mock
+async def test_requests_carry_auth_cookie(client):
+    # The logbook plugin derives the entry author from this cookie.
+    route = respx.get(f"{API}/logs/2026-06-05").respond(200, json=[])
+    await client.get_entries("2026-06-05")
+    cookie = route.calls[0].request.headers.get("cookie", "")
+    assert "JAUTHENTICATION=test-token" in cookie
+
+
+@respx.mock
 async def test_get_entries_404_means_empty_day(client):
     respx.get(f"{API}/logs/2026-06-05").respond(404)
     assert await client.get_entries("2026-06-05") == []
@@ -55,7 +64,8 @@ async def test_post_entry_sends_text_json(client):
     route = respx.post(f"{API}/logs").respond(201)
     await client.post_entry("Sunset off Discovery Island")
     assert json.loads(route.calls[0].request.content) == {
-        "text": "Sunset off Discovery Island"
+        "text": "Sunset off Discovery Island",
+        "ago": 0,
     }
 
 

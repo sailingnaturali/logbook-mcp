@@ -26,8 +26,12 @@ class LogbookClient:
 
     def __init__(self, base_url: str, token: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
+        # signalk-server's admin gate accepts the Authorization header, but
+        # the logbook plugin reads the author from the JAUTHENTICATION
+        # cookie — send the token both ways.
         headers = {"Authorization": f"Bearer {token}"} if token else {}
-        self._http = httpx.AsyncClient(timeout=5.0, headers=headers)
+        cookies = {"JAUTHENTICATION": token} if token else {}
+        self._http = httpx.AsyncClient(timeout=5.0, headers=headers, cookies=cookies)
 
     @property
     def _api(self) -> str:
@@ -45,10 +49,14 @@ class LogbookClient:
     async def post_entry(self, text: str) -> None:
         """Create an entry; the plugin enriches it server-side from live SignalK.
 
+        ``ago: 0`` is always included — the plugin calls ``buffer.get(req.body.ago)``
+        whenever its state buffer is non-empty, and omitting the field causes an
+        HTTP 500 once the buffer has been populated.
+
         POST returns a bare 201 with no body — callers re-fetch the day to see
         the created entry.
         """
-        resp = await self._http.post(f"{self._api}/logs", json={"text": text})
+        resp = await self._http.post(f"{self._api}/logs", json={"text": text, "ago": 0})
         resp.raise_for_status()
 
     async def put_entry(self, date: str, datetime_key: str, entry: dict) -> None:
