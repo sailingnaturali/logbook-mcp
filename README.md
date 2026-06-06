@@ -26,6 +26,11 @@ export LOGBOOK_TZ=America/Vancouver                    # fallback timezone
 logbook-mcp
 ```
 
+Replace `naturalaspi.local` with your SignalK server's hostname. Create the
+access token in the SignalK admin UI (Security → Access Requests / Tokens)
+with read/write permission — without it, writes fail with an error naming
+`LOGBOOK_SK_TOKEN`.
+
 ## Roadmap
 
 Sea-time derivation and USCG/TC sea-service form exports are planned for Phase 0.5. Rather than maintaining a parallel store, `export_uscg_form` / `export_tc_form` will derive sea days by scanning signalk-logbook entries, and `draft_summary` will read entries by date range. See [docs/superpowers/specs/2026-06-05-adopt-signalk-logbook-design.md](docs/superpowers/specs/2026-06-05-adopt-signalk-logbook-design.md) for the design.
@@ -38,4 +43,4 @@ MIT. See LICENSE.
 
 ## Security
 
-If you find a security issue, see SECURITY.md.
+If you find a security issue, see [SECURITY.md](SECURITY.md).
