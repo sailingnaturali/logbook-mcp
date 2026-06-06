@@ -58,6 +58,7 @@ async def test_mark_moment_posts_text_and_returns_contract(client):
     assert result["time_display"] == "11:32"  # PDT from the entry's own fix
     assert result["position"] == {"longitude": -123.27, "latitude": 48.42}
     assert result["position_display"] == "48.4 North, 123.3 West"
+    assert result["confirmation"] == "Logged. Entry 2. 11:32. 48.4 North, 123.3 West."
 
 
 @respx.mock
@@ -72,6 +73,7 @@ async def test_mark_moment_entry_without_position(client):
     assert result["position"] is None
     assert result["position_display"] is None
     assert result["time_display"] == "11:32"  # falls back to LOGBOOK_TZ
+    assert result["confirmation"] == "Logged. Entry 1. 11:32."
 
 
 @respx.mock

@@ -151,17 +151,24 @@ async def mark_moment(
         if pos and pos.get("latitude") is not None
         else None
     )
+    time_disp = _time_display(entry["datetime"], pos_out, fallback_tz)
+    pos_display = _format_position(
+        pos_out["latitude"] if pos_out else None,
+        pos_out["longitude"] if pos_out else None,
+    )
+    # One ready-to-speak string so voice agents relay it verbatim instead of
+    # re-assembling (and paraphrasing) the individual fields.
+    parts = [f"Entry {ordinal}", time_disp] + ([pos_display] if pos_display else [])
+    confirmation = "Logged. " + ". ".join(parts) + "."
     return {
         "id": entry["datetime"],
         "entry_display": f"Entry {ordinal}",
+        "confirmation": confirmation,
         "text": entry.get("text", text),
         "timestamp": entry["datetime"],
-        "time_display": _time_display(entry["datetime"], pos_out, fallback_tz),
+        "time_display": time_disp,
         "position": pos_out,
-        "position_display": _format_position(
-            pos_out["latitude"] if pos_out else None,
-            pos_out["longitude"] if pos_out else None,
-        ),
+        "position_display": pos_display,
     }
 
 

@@ -17,6 +17,7 @@ server. The ship's log lives on the boat as per-day YAML.
   `LOGBOOK_DB_PATH`.
 - Roadmap change: sea-time (USCG/TC) exports will derive from
   signalk-logbook entries; the planned `sea_days` store is dropped.
+- `mark_moment` response includes a ready-to-speak `confirmation` string for voice agents.
 
 ## v0.1.0 — 2026-05-20
 

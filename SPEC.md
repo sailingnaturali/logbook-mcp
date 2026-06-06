@@ -71,6 +71,7 @@ and barometer are captured automatically from the vessel's sensors. Pass
 {
   "id": "2026-06-05T18:32:00Z",
   "entry_display": "Entry 3",
+  "confirmation": "Logged. Entry 3. 11:32. 48.4 North, 123.3 West.",
   "text": "Beautiful sunset off Discovery Island",
   "timestamp": "2026-06-05T18:32:00Z",
   "time_display": "11:32",
@@ -81,6 +82,8 @@ and barometer are captured automatically from the vessel's sensors. Pass
 
 - `id` — the entry's datetime key (string); its REST identity in signalk-logbook.
 - `entry_display` — `"Entry {n}"` where `n` is the 1-based ordinal within the day.
+- `confirmation` — ready-to-speak confirmation sentence; voice agents must relay
+  it verbatim rather than assembling their own from the individual fields.
 - `time_display` — vessel-local wall-clock time (`HH:MM`), derived from the
   entry's own position via `timezonefinder` + `zoneinfo`; falls back to
   `LOGBOOK_TZ` when the entry has no position.
