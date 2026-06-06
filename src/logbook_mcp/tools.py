@@ -1,15 +1,31 @@
-"""MCP tool implementations for logbook-mcp."""
+"""MCP tool implementations for logbook-mcp.
+
+Async functions over a LogbookClient; contracts in SPEC.md.
+"""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import zoneinfo
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
-from logbook_mcp.db import LogbookDB
+import httpx
+
+from logbook_mcp.client import LogbookClient
+
+if TYPE_CHECKING:
+    from timezonefinder import TimezoneFinder
+
+_tf: "TimezoneFinder | None" = None
 
 
-def _utc_now_iso() -> str:
-    """ISO 8601 UTC timestamp with Z suffix (logbook convention)."""
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+def _get_timezone_finder() -> "TimezoneFinder":
+    """Lazy-init TimezoneFinder — it loads ~50MB of shapefile data."""
+    global _tf
+    if _tf is None:
+        from timezonefinder import TimezoneFinder
+        _tf = TimezoneFinder()
+    return _tf
 
 
 def _format_position(lat: float | None, lon: float | None) -> str | None:
@@ -20,34 +36,18 @@ def _format_position(lat: float | None, lon: float | None) -> str | None:
     return f"{lat_part}, {lon_part}"
 
 
-def mark_moment(
-    db: LogbookDB,
-    text: str,
-    position: dict | None = None,
-) -> dict:
-    """Record a marked moment with optional position.
+def _entry_timezone(position: dict | None, fallback_tz: str) -> zoneinfo.ZoneInfo:
+    """Timezone at the entry's own position, else the configured fallback."""
+    if position:
+        tz_name = _get_timezone_finder().timezone_at(
+            lat=position["latitude"], lng=position["longitude"]
+        )
+        if tz_name:
+            return zoneinfo.ZoneInfo(tz_name)
+    return zoneinfo.ZoneInfo(fallback_tz)
 
-    Args:
-        db: Open LogbookDB.
-        text: Free-form description.
-        position: Optional dict with 'longitude' and 'latitude'.
 
-    Returns:
-        Dict with id, entry_display, text, timestamp, position, position_display.
-    """
-    timestamp = _utc_now_iso()
-    lon = position["longitude"] if position else None
-    lat = position["latitude"] if position else None
-
-    moment_id = db.insert(
-        "INSERT INTO marked_moments (text, timestamp, longitude, latitude) VALUES (?, ?, ?, ?)",
-        (text, timestamp, lon, lat),
-    )
-    return {
-        "id": moment_id,
-        "entry_display": f"Entry {moment_id}",
-        "text": text,
-        "timestamp": timestamp,
-        "position": {"longitude": lon, "latitude": lat} if position else None,
-        "position_display": _format_position(lat, lon),
-    }
+def _time_display(datetime_iso: str, position: dict | None, fallback_tz: str) -> str:
+    """Vessel-local HH:MM for an entry timestamp (same display as signalk-mcp)."""
+    dt = datetime.fromisoformat(datetime_iso.replace("Z", "+00:00"))
+    return dt.astimezone(_entry_timezone(position, fallback_tz)).strftime("%H:%M")
