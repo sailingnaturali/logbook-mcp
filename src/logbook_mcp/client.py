@@ -11,7 +11,7 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def validate_date(date: str) -> None:
-    """Reject anything that isn't YYYY-MM-DD before interpolating into a URL."""
+    """Reject anything that isn't YYYY-MM-DD shaped (format check only) before interpolating into a URL."""
     if not _DATE_RE.match(date):
         raise ValueError(f"invalid date: {date!r}")
 
@@ -67,7 +67,7 @@ class LogbookClient:
         url = f"{self.base_url}/signalk/v1/api/vessels/self/navigation/position"
         try:
             resp = await self._http.get(url)
-        except httpx.HTTPError:
+        except httpx.TransportError:
             return None
         if resp.status_code != 200:
             return None

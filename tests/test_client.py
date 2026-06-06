@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 import respx
@@ -52,7 +54,6 @@ async def test_get_entries_rejects_malformed_date(client):
 async def test_post_entry_sends_text_json(client):
     route = respx.post(f"{API}/logs").respond(201)
     await client.post_entry("Sunset off Discovery Island")
-    import json
     assert json.loads(route.calls[0].request.content) == {
         "text": "Sunset off Discovery Island"
     }
@@ -65,6 +66,7 @@ async def test_put_entry_urlencodes_datetime_key(client):
     ).respond(200)
     await client.put_entry("2026-06-05", "2026-06-05T18:32:00.000Z", ENTRY)
     assert route.called
+    assert json.loads(route.calls[0].request.content) == ENTRY
 
 
 @respx.mock
@@ -88,3 +90,8 @@ async def test_get_position_none_on_connect_error(client):
         side_effect=httpx.ConnectError("boom")
     )
     assert await client.get_position() is None
+
+
+async def test_put_entry_rejects_malformed_date(client):
+    with pytest.raises(ValueError, match="invalid date"):
+        await client.put_entry("junk", "2026-06-05T18:32:00.000Z", ENTRY)
