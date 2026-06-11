@@ -10,6 +10,7 @@ from logbook_mcp.server import build_server
 
 BASE = "http://test-sk:3000"
 API = f"{BASE}/plugins/signalk-logbook"
+POSITION_URL = f"{BASE}/signalk/v1/api/vessels/self/navigation/position"
 
 CREATED = {
     "datetime": "2026-06-05T18:32:00.000Z",
@@ -54,7 +55,9 @@ async def test_mark_moment_round_trip_through_server(lb_client):
 
 @respx.mock
 async def test_read_entries_round_trip_through_server(lb_client):
+    respx.get(POSITION_URL).respond(404)
     respx.get(f"{API}/logs/2026-06-05").respond(200, json=[CREATED])
+    respx.get(f"{API}/logs/2026-06-06").respond(404)
     server = build_server(lb_client)
     async with create_connected_server_and_client_session(server) as client:
         result = await client.call_tool("read_entries", {"date": "2026-06-05"})
@@ -103,6 +106,7 @@ async def test_unreachable_pi_surfaces_as_tool_error(lb_client):
 
 @respx.mock
 async def test_read_entries_unreachable_surfaces_as_tool_error(lb_client):
+    respx.get(POSITION_URL).respond(404)
     respx.get(url__regex=rf"{API}/logs/\d{{4}}-\d{{2}}-\d{{2}}$").mock(
         side_effect=httpx.ConnectError("boom")
     )

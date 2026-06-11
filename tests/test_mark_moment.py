@@ -137,6 +137,18 @@ async def test_mark_moment_post_ok_but_confirm_failed_is_honest(client):
 
 
 @respx.mock
+async def test_mark_moment_datetime_less_newest_entry_is_honest(client):
+    # The re-fetched day's newest entry lacks "datetime" (malformed store).
+    # That must surface as the post-write honesty error, not a raw KeyError.
+    respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-05").respond(
+        200, json=[{"text": "no datetime here", "category": "navigation"}]
+    )
+    with pytest.raises(RuntimeError, match="recorded but could not be confirmed"):
+        await mark_moment(client, text="x", now=NOW)
+
+
+@respx.mock
 async def test_mark_moment_put_failure_after_post_is_honest(client):
     # POST and re-fetch succeeded; the position-override PUT failed.
     # The moment WAS recorded — the error must not claim otherwise.

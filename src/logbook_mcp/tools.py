@@ -6,15 +6,20 @@ Async functions over a LogbookClient; contracts in SPEC.md.
 from __future__ import annotations
 
 import zoneinfo
+from datetime import date as date_cls
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 import httpx
 
-from logbook_mcp.client import LogbookClient
+from logbook_mcp.client import LogbookClient, validate_date
 
 if TYPE_CHECKING:
     from timezonefinder import TimezoneFinder
+
+# Single default for "what timezone is the vessel in when there's no GPS fix" —
+# used by both tools and the server wiring (LOGBOOK_TZ overrides at startup).
+FALLBACK_TZ = "America/Vancouver"
 
 _tf: "TimezoneFinder | None" = None
 
@@ -83,7 +88,16 @@ async def _newest_entry(
             # underway entries). e.get() guards a malformed entry missing
             # "datetime" from leaking KeyError past our error wrapping.
             entries.sort(key=lambda e: e.get("datetime", ""))
-            return entries[-1], len(entries)
+            newest = entries[-1]
+            if not newest.get("datetime"):
+                # Callers dereference entry["datetime"]; a datetime-less
+                # record must become the post-write honesty error, not a
+                # KeyError escaping the (httpx, ValueError) handlers.
+                raise RuntimeError(
+                    "Logbook entry was recorded but could not be confirmed: "
+                    "newest entry has no datetime; check the log via read_entries"
+                )
+            return newest, len(entries)
     raise RuntimeError(
         "Logbook entry was recorded but could not be confirmed: "
         "no entries found on re-fetch"
@@ -94,7 +108,7 @@ async def mark_moment(
     client: LogbookClient,
     text: str,
     position: dict | None = None,
-    fallback_tz: str = "America/Vancouver",
+    fallback_tz: str = FALLBACK_TZ,
     now: datetime | None = None,
 ) -> dict:
     """Record a moment in the ship's log via signalk-logbook.
@@ -175,23 +189,41 @@ async def mark_moment(
 async def read_entries(
     client: LogbookClient,
     date: str | None = None,
-    fallback_tz: str = "America/Vancouver",
+    fallback_tz: str = FALLBACK_TZ,
     now: datetime | None = None,
 ) -> dict:
     """Read a day's log entries (default: today in vessel-local time).
 
-    The default date resolves via the current GPS fix → timezone; if there is
-    no fix, ``fallback_tz`` decides what "today" means.
+    ``date`` means a vessel-local calendar day. The plugin keys its day-files
+    by UTC date, so one local day spans up to two UTC files — both are fetched
+    and each entry is kept by its own local date (fleet conventions R2).
+
+    Single-tz assumption: one canonical timezone per call (current GPS fix,
+    else ``fallback_tz``) decides both the day window and the displayed times.
+    A vessel that crossed a timezone boundary mid-day is rendered consistently
+    in where-it-is-now time.
     """
     if now is None:
         now = datetime.now(timezone.utc)
+    fix = await client.get_position()          # degrades to None when no fix
+    tz = _entry_timezone(fix, fallback_tz)
     if date is None:
-        fix = await client.get_position()
-        tz = _entry_timezone(fix, fallback_tz)
         date = now.astimezone(tz).date().isoformat()
+    else:
+        validate_date(date)
 
+    target = date_cls.fromisoformat(date)
+    start_local = datetime(target.year, target.month, target.day, tzinfo=tz)
+    end_local = start_local + timedelta(days=1)
+    utc_days = {
+        start_local.astimezone(timezone.utc).date(),
+        (end_local - timedelta(microseconds=1)).astimezone(timezone.utc).date(),
+    }
+
+    raw: list[dict] = []
     try:
-        raw = await client.get_entries(date)
+        for day in sorted(utc_days):
+            raw.extend(await client.get_entries(day.isoformat()))
     except (httpx.ConnectError, httpx.TimeoutException) as exc:
         raise RuntimeError(
             f"Logbook unavailable: cannot reach SignalK at {client.base_url}"
@@ -203,10 +235,28 @@ async def read_entries(
         raise RuntimeError(
             f"Logbook read failed (HTTP {exc.response.status_code})"
         ) from exc
+    except ValueError as exc:                  # malformed 200 body (JSONDecodeError)
+        raise RuntimeError(
+            f"Logbook read returned malformed data from {client.base_url}"
+        ) from exc
 
-    raw.sort(key=lambda e: e.get("datetime", ""))
+    kept: list[dict] = []
+    for e in raw:
+        dt_str = e.get("datetime", "")
+        if not dt_str:
+            kept.append(e)                     # unplaceable — keep, don't crash
+            continue
+        try:
+            edt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        except ValueError:
+            kept.append(e)
+            continue
+        if edt.astimezone(tz).date() == target:
+            kept.append(e)
+
+    kept.sort(key=lambda e: e.get("datetime", ""))
     entries = []
-    for n, e in enumerate(raw, start=1):
+    for n, e in enumerate(kept, start=1):
         dt_str = e.get("datetime", "")
         pos = e.get("position") or None
         # A partial fix (only one of lat/lon present) counts as no fix.
@@ -215,11 +265,15 @@ async def read_entries(
             if pos and pos.get("latitude") is not None
             else None
         )
+        try:
+            dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00")) if dt_str else None
+        except ValueError:
+            dt = None                          # kept-but-unparseable datetime
         entries.append(
             {
                 "id": dt_str,
                 "entry_display": f"Entry {n}",
-                "time_display": _time_display(dt_str, pos_out, fallback_tz) if dt_str else None,
+                "time_display": dt.astimezone(tz).strftime("%H:%M") if dt else None,
                 "text": e.get("text", ""),
                 "category": e.get("category", "navigation"),
                 "author": e.get("author"),

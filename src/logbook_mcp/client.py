@@ -24,14 +24,18 @@ class LogbookClient:
     access token, sent as ``Authorization: Bearer {token}``.
     """
 
-    def __init__(self, base_url: str, token: str | None = None) -> None:
+    def __init__(self, base_url: str, token: str | None = None,
+                 timeout: float = 5.0) -> None:
         self.base_url = base_url.rstrip("/")
         # signalk-server's admin gate accepts the Authorization header, but
         # the logbook plugin reads the author from the JAUTHENTICATION
         # cookie — send the token both ways.
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         cookies = {"JAUTHENTICATION": token} if token else {}
-        self._http = httpx.AsyncClient(timeout=5.0, headers=headers, cookies=cookies)
+        # One timeout for all phases, including the post-write PUT; a slow Pi
+        # can exceed 5 s and read as a false "could not confirm" — raise it
+        # via LOGBOOK_TIMEOUT rather than living with the default.
+        self._http = httpx.AsyncClient(timeout=timeout, headers=headers, cookies=cookies)
 
     @property
     def _api(self) -> str:

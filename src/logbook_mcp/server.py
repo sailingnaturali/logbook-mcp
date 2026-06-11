@@ -12,17 +12,18 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from logbook_mcp.client import LogbookClient
-from logbook_mcp.tools import mark_moment, read_entries
+from logbook_mcp.tools import FALLBACK_TZ, mark_moment, read_entries
 
 
-def _env_config() -> tuple[str, str | None, str]:
+def _env_config() -> tuple[str, str | None, str, float]:
     url = os.environ.get("LOGBOOK_SK_URL", "http://naturalaspi.local:3000")
     token = os.environ.get("LOGBOOK_SK_TOKEN")
-    tz = os.environ.get("LOGBOOK_TZ", "America/Vancouver")
-    return url, token, tz
+    tz = os.environ.get("LOGBOOK_TZ", FALLBACK_TZ)
+    timeout = float(os.environ.get("LOGBOOK_TIMEOUT", "5.0"))
+    return url, token, tz, timeout
 
 
-def build_server(client: LogbookClient, fallback_tz: str = "America/Vancouver") -> Server:
+def build_server(client: LogbookClient, fallback_tz: str = FALLBACK_TZ) -> Server:
     server = Server("logbook-mcp")
 
     @server.list_tools()
@@ -101,8 +102,8 @@ def build_server(client: LogbookClient, fallback_tz: str = "America/Vancouver") 
 
 
 def main() -> None:
-    url, token, tz = _env_config()
-    client = LogbookClient(url, token=token)
+    url, token, tz, timeout = _env_config()
+    client = LogbookClient(url, token=token, timeout=timeout)
     server = build_server(client, fallback_tz=tz)
 
     async def _run() -> None:

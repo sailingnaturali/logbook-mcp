@@ -39,9 +39,17 @@ async def client():
     await c.aclose()
 
 
+def _no_fix():
+    """No GPS fix -> the canonical tz falls back to fallback_tz."""
+    respx.get(POSITION_URL).respond(404)
+
+
 @respx.mock
 async def test_read_entries_explicit_date(client):
+    _no_fix()
+    # A PDT local day spans two UTC day-files; the evening file is empty here.
     respx.get(f"{API}/logs/2026-06-05").respond(200, json=ENTRIES)
+    respx.get(f"{API}/logs/2026-06-06").respond(404)
 
     result = await read_entries(client, date="2026-06-05")
 
@@ -49,14 +57,34 @@ async def test_read_entries_explicit_date(client):
     assert result["count"] == 2
     first, second = result["entries"]
     assert first["entry_display"] == "Entry 1"
-    # 14:00Z → 07:00 PDT: timezonefinder resolves (48.70, -123.20) to
-    # America/Vancouver — real geographic data, not an arbitrary constant.
-    assert first["time_display"] == "07:00"
+    assert first["time_display"] == "07:00"        # 14:00Z -> 07:00 PDT
     assert second["entry_display"] == "Entry 2"
     assert second["id"] == "2026-06-05T18:32:00.000Z"
     assert second["category"] == "navigation"
     assert second["author"] == "naturali"
     assert second["position_display"] == "48.4 North, 123.3 West"
+
+
+@respx.mock
+async def test_local_day_spans_two_utc_files(client):
+    # The R2 case: a vessel-local (PDT) day [00:00, 24:00) is UTC
+    # [07:00 same-day, 07:00 next-day) — two UTC-keyed day-files.
+    _no_fix()
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[
+        {"datetime": "2026-06-05T03:00:00.000Z", "text": "previous local day"},   # 06-04 20:00 PDT
+        {"datetime": "2026-06-05T08:00:00.000Z", "text": "early morning local"},  # 06-05 01:00 PDT
+    ])
+    respx.get(f"{API}/logs/2026-06-06").respond(200, json=[
+        {"datetime": "2026-06-06T05:00:00.000Z", "text": "late evening local"},   # 06-05 22:00 PDT
+        {"datetime": "2026-06-06T08:00:00.000Z", "text": "next local day"},       # 06-06 01:00 PDT
+    ])
+
+    result = await read_entries(client, date="2026-06-05")
+
+    assert result["count"] == 2
+    texts = [e["text"] for e in result["entries"]]
+    assert texts == ["early morning local", "late evening local"]
+    assert [e["time_display"] for e in result["entries"]] == ["01:00", "22:00"]
 
 
 @respx.mock
@@ -67,17 +95,20 @@ async def test_read_entries_defaults_to_vessel_local_today(client):
         200, json={"value": {"latitude": 48.76, "longitude": -123.05}}
     )
     route = respx.get(f"{API}/logs/2026-06-05").respond(200, json=ENTRIES)
+    respx.get(f"{API}/logs/2026-06-06").respond(200, json=[])
 
     result = await read_entries(client, now=NOW)
 
     assert route.called
     assert result["date"] == "2026-06-05"
+    assert result["count"] == 2
 
 
 @respx.mock
 async def test_read_entries_default_date_falls_back_to_tz_env(client):
-    respx.get(POSITION_URL).respond(404)  # no fix
+    _no_fix()
     route = respx.get(f"{API}/logs/2026-06-05").respond(200, json=[])
+    respx.get(f"{API}/logs/2026-06-06").respond(200, json=[])
 
     result = await read_entries(client, now=NOW, fallback_tz="America/Vancouver")
 
@@ -87,7 +118,9 @@ async def test_read_entries_default_date_falls_back_to_tz_env(client):
 
 @respx.mock
 async def test_read_entries_empty_day(client):
+    _no_fix()
     respx.get(f"{API}/logs/2026-06-05").respond(404)
+    respx.get(f"{API}/logs/2026-06-06").respond(404)
     result = await read_entries(client, date="2026-06-05")
     assert result == {"date": "2026-06-05", "count": 0, "entries": []}
 
@@ -95,8 +128,10 @@ async def test_read_entries_empty_day(client):
 @respx.mock
 async def test_read_entries_tolerates_entry_missing_datetime(client):
     # A malformed entry (no datetime) must not crash the whole day read.
+    _no_fix()
     malformed = {"text": "corrupt entry", "category": "navigation"}
     respx.get(f"{API}/logs/2026-06-05").respond(200, json=[malformed])
+    respx.get(f"{API}/logs/2026-06-06").respond(404)
 
     result = await read_entries(client, date="2026-06-05")
 
@@ -108,7 +143,18 @@ async def test_read_entries_tolerates_entry_missing_datetime(client):
 
 
 @respx.mock
+async def test_read_entries_malformed_body_raises_clear_error(client):
+    # A 200 with a non-JSON body must surface as the read error, not a raw
+    # JSONDecodeError escaping the handler.
+    _no_fix()
+    respx.get(f"{API}/logs/2026-06-05").respond(200, content=b"<html>oops</html>")
+    with pytest.raises(RuntimeError, match="Logbook read"):
+        await read_entries(client, date="2026-06-05")
+
+
+@respx.mock
 async def test_read_entries_unreachable_raises_clear_error(client):
+    _no_fix()
     respx.get(f"{API}/logs/2026-06-05").mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(RuntimeError, match="Logbook unavailable"):
         await read_entries(client, date="2026-06-05")
