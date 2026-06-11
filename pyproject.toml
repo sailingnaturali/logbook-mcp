@@ -1,6 +1,6 @@
 [project]
 name = "logbook-mcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "MCP server over signalk-logbook: marked moments, day reads, and (future) USCG/TC sea-time export"
 readme = "README.md"
 authors = [
