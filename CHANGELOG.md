@@ -8,6 +8,11 @@
 - `mark_moment` accepts an optional `category`.
 - `LogbookClient`: `post_entry` category, `get_dates` day index.
 
+## 0.3.0 — 2026-06-11
+
+- `read_entries` reads vessel-local calendar days (one local day can span two
+  UTC day files); one canonical timezone per read.
+
 ## 0.2.0 — 2026-06-05
 
 **Breaking: SQLite store replaced by signalk-logbook.** logbook-mcp is now a

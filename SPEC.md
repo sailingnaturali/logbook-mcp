@@ -35,7 +35,7 @@ tool shapes, behavior contracts, and acceptance criteria.
   is delegated to MCP's `inputSchema` validator (jsonschema); domain errors
   raise from the tool function.
 
-## Phase 0 — shipped (0.2.0)
+## Shipped surface
 
 ### Tool: `mark_moment`
 
@@ -303,6 +303,9 @@ All parameters are optional.
   `since` defaults to `until − 180 days`).
 - `since` after `until` is rejected with a `ValueError` before any fetch.
 - `drill_type` filters to a single drill type; invalid values are rejected.
+- An entry is listed when its `category` is `"drill"` OR its text opens with a
+  well-formed `[drill:…]` tag — so tagged entries with a different or missing
+  category are still found.
 
 **Response**
 
