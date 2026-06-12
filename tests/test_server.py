@@ -28,12 +28,18 @@ async def lb_client():
     await c.aclose()
 
 
-async def test_list_tools_exposes_both_tools(lb_client):
+async def test_list_tools_exposes_all_tools(lb_client):
     server = build_server(lb_client)
     assert server.name == "logbook-mcp"
     async with create_connected_server_and_client_session(server) as client:
         tools = await client.list_tools()
-        assert {t.name for t in tools.tools} == {"mark_moment", "read_entries"}
+        assert {t.name for t in tools.tools} == {
+            "mark_moment", "read_entries", "log_drill", "list_drills",
+        }
+        mark = next(t for t in tools.tools if t.name == "mark_moment")
+        assert mark.inputSchema["properties"]["category"]["enum"] == [
+            "navigation", "engine", "radio", "maintenance", "drill",
+        ]
 
 
 @respx.mock
@@ -115,3 +121,43 @@ async def test_read_entries_unreachable_surfaces_as_tool_error(lb_client):
         result = await client.call_tool("read_entries", {"date": "2026-06-05"})
         assert result.isError
         assert "SignalK" in result.content[0].text
+
+
+DRILL_CREATED = {
+    "datetime": "2026-06-12T20:29:50.000Z",
+    "text": "[drill:mob outcome=pass] Clean recovery.",
+    "author": "naturali",
+    "category": "drill",
+}
+
+
+@respx.mock
+async def test_log_drill_round_trip_through_server(lb_client):
+    respx.post(f"{API}/logs").respond(201)
+    respx.get(url__regex=rf"{API}/logs/\d{{4}}-\d{{2}}-\d{{2}}$").respond(
+        200, json=[DRILL_CREATED]
+    )
+    server = build_server(lb_client)
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "log_drill",
+            {"drill_type": "mob", "outcome": "pass", "notes": "Clean recovery."},
+        )
+        payload = json.loads(result.content[0].text)
+        assert payload["drill_type"] == "mob"
+        assert payload["outcome"] == "pass"
+        assert payload["confirmation"].startswith("Logged mob drill, pass.")
+
+
+@respx.mock
+async def test_list_drills_round_trip_through_server(lb_client):
+    respx.get(f"{API}/logs").respond(200, json=["2026-06-12"])
+    respx.get(f"{API}/logs/2026-06-12").respond(200, json=[DRILL_CREATED])
+    server = build_server(lb_client)
+    async with create_connected_server_and_client_session(server) as client:
+        result = await client.call_tool(
+            "list_drills", {"since": "2026-06-01", "until": "2026-06-30"}
+        )
+        payload = json.loads(result.content[0].text)
+        assert payload["count"] == 1
+        assert payload["latest_by_type"] == {"mob": "2026-06-12"}

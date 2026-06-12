@@ -12,7 +12,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from logbook_mcp.client import LogbookClient
-from logbook_mcp.tools import FALLBACK_TZ, mark_moment, read_entries
+from logbook_mcp.tools import FALLBACK_TZ, list_drills, log_drill, mark_moment, read_entries
 
 
 def _env_config() -> tuple[str, str | None, str, float]:
@@ -41,6 +41,16 @@ def build_server(client: LogbookClient, fallback_tz: str = FALLBACK_TZ) -> Serve
                     "additionalProperties": False,
                     "properties": {
                         "text": {"type": "string", "minLength": 1},
+                        "category": {
+                            "type": "string",
+                            "enum": [
+                                "navigation",
+                                "engine",
+                                "radio",
+                                "maintenance",
+                                "drill",
+                            ],
+                        },
                         "position": {
                             "type": "object",
                             "additionalProperties": False,
@@ -79,6 +89,84 @@ def build_server(client: LogbookClient, fallback_tz: str = FALLBACK_TZ) -> Serve
                     },
                 },
             ),
+            types.Tool(
+                name="log_drill",
+                description=(
+                    "Record a safety drill in the ship's log (MOB, fire, "
+                    "abandon-ship, steering-failure, flooding, radio, "
+                    "alert-chain, …). Position and conditions are captured "
+                    "automatically; pass position only to override the GPS fix."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "drill_type": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]{1,32}$",
+                        },
+                        "outcome": {
+                            "type": "string",
+                            "enum": ["pass", "partial", "fail"],
+                        },
+                        "duration_minutes": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1440,
+                        },
+                        "participants": {
+                            "type": "array",
+                            "items": {"type": "string", "minLength": 1},
+                            "minItems": 1,
+                        },
+                        "notes": {"type": "string"},
+                        "position": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "longitude": {
+                                    "type": "number",
+                                    "minimum": -180,
+                                    "maximum": 180,
+                                },
+                                "latitude": {
+                                    "type": "number",
+                                    "minimum": -90,
+                                    "maximum": 90,
+                                },
+                            },
+                            "required": ["longitude", "latitude"],
+                        },
+                    },
+                    "required": ["drill_type", "outcome"],
+                },
+            ),
+            types.Tool(
+                name="list_drills",
+                description=(
+                    "List safety drills from the ship's log (default: last "
+                    "180 days), with a latest_by_type summary for cadence "
+                    "checks."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "drill_type": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9-]{1,32}$",
+                        },
+                        "since": {
+                            "type": "string",
+                            "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                        },
+                        "until": {
+                            "type": "string",
+                            "pattern": r"^\d{4}-\d{2}-\d{2}$",
+                        },
+                    },
+                },
+            ),
         ]
 
     @server.call_tool()
@@ -89,10 +177,30 @@ def build_server(client: LogbookClient, fallback_tz: str = FALLBACK_TZ) -> Serve
                 text=args["text"],
                 position=args.get("position"),
                 fallback_tz=fallback_tz,
+                category=args.get("category"),
             )
         elif name == "read_entries":
             result = await read_entries(
                 client, date=args.get("date"), fallback_tz=fallback_tz
+            )
+        elif name == "log_drill":
+            result = await log_drill(
+                client,
+                drill_type=args["drill_type"],
+                outcome=args["outcome"],
+                duration_minutes=args.get("duration_minutes"),
+                participants=args.get("participants"),
+                notes=args.get("notes"),
+                position=args.get("position"),
+                fallback_tz=fallback_tz,
+            )
+        elif name == "list_drills":
+            result = await list_drills(
+                client,
+                drill_type=args.get("drill_type"),
+                since=args.get("since"),
+                until=args.get("until"),
+                fallback_tz=fallback_tz,
             )
         else:
             raise ValueError(f"Unknown tool: {name}")
