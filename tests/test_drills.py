@@ -1,6 +1,6 @@
 import pytest
 
-from logbook_mcp.drills import compose_drill_text
+from logbook_mcp.drills import compose_drill_text, parse_drill_tag
 
 
 def test_compose_full_tag():
@@ -30,6 +30,12 @@ def test_compose_rejects_comma_in_participant():
         compose_drill_text("mob", "pass", participants=["Clark, Bryan"])
 
 
+def test_compose_rejects_brackets_in_participant():
+    for bad in ("Bryan]Name", "Bryan[Name"):
+        with pytest.raises(ValueError, match="bracket"):
+            compose_drill_text("mob", "pass", participants=[bad])
+
+
 def test_compose_rejects_bad_drill_type():
     for bad in ("MOB", "man overboard", "", "x" * 33, "mob!"):
         with pytest.raises(ValueError, match="drill_type"):
@@ -46,7 +52,9 @@ def test_compose_rejects_nonpositive_duration():
         compose_drill_text("mob", "pass", duration_minutes=0)
 
 
-from logbook_mcp.drills import parse_drill_tag
+def test_compose_rejects_fractional_duration():
+    with pytest.raises(ValueError, match="duration"):
+        compose_drill_text("mob", "pass", duration_minutes=14.7)
 
 
 def test_parse_full_tag():
@@ -114,3 +122,9 @@ def test_parse_tolerates_malformed_field_values():
     assert parsed["drill_type"] == "mob"
     assert parsed["outcome"] is None
     assert parsed["duration_minutes"] is None
+
+
+def test_parse_rejects_zero_or_padded_duration():
+    for text in ("[drill:mob outcome=pass duration=0m]",
+                 "[drill:mob outcome=pass duration=007m]"):
+        assert parse_drill_tag(text)["duration_minutes"] is None

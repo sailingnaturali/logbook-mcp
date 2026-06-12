@@ -18,13 +18,15 @@ _DRILL_TYPE_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 
 def _normalize_participant(name: str) -> str:
     """Tag fields split on whitespace and crew splits on commas, so names
-    may contain neither: internal whitespace becomes hyphens, commas are an
-    error."""
+    may contain neither: internal whitespace becomes hyphens, commas and
+    brackets are an error."""
     name = name.strip()
     if not name:
         raise ValueError("participant name is empty")
     if "," in name:
         raise ValueError(f"participant name may not contain a comma: {name!r}")
+    if "[" in name or "]" in name:
+        raise ValueError(f"participant name may not contain brackets: {name!r}")
     return re.sub(r"\s+", "-", name)
 
 
@@ -44,8 +46,10 @@ def compose_drill_text(
         raise ValueError(f"invalid outcome {outcome!r}: want one of {VALID_OUTCOMES}")
     fields = [f"outcome={outcome}"]
     if duration_minutes is not None:
-        if int(duration_minutes) < 1:
-            raise ValueError(f"invalid duration_minutes {duration_minutes!r}: want >= 1")
+        if duration_minutes != int(duration_minutes) or int(duration_minutes) < 1:
+            raise ValueError(
+                f"invalid duration_minutes {duration_minutes!r}: want a whole number >= 1"
+            )
         fields.append(f"duration={int(duration_minutes)}m")
     if participants:
         fields.append("crew=" + ",".join(_normalize_participant(p) for p in participants))
@@ -65,7 +69,7 @@ _TAG_RE = re.compile(
     re.DOTALL,
 )
 
-_DURATION_RE = re.compile(r"^\d+m$")
+_DURATION_RE = re.compile(r"^[1-9]\d*m$")
 
 
 def parse_drill_tag(text: str) -> dict | None:
