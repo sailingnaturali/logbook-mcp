@@ -14,3 +14,4 @@ build/
 htmlcov/
 *.db
 *.sqlite
+.worktrees/
