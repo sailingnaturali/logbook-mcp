@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from logbook_mcp.client import LogbookClient, validate_date
-from logbook_mcp.drills import compose_drill_text, parse_drill_tag
+from logbook_mcp.drills import compose_drill_text, is_valid_drill_type, parse_drill_tag
 
 if TYPE_CHECKING:
     from timezonefinder import TimezoneFinder
@@ -333,3 +333,104 @@ async def read_entries(
             }
         )
     return {"date": date, "count": len(entries), "entries": entries}
+
+
+async def list_drills(
+    client: LogbookClient,
+    drill_type: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    fallback_tz: str = FALLBACK_TZ,
+    now: datetime | None = None,
+) -> dict:
+    """Drill entries in a date window (default: the last 180 days).
+
+    Walks the plugin's UTC day index — window bounds are UTC day-file dates,
+    matching how entries are stored. An entry counts as a drill when its
+    category is "drill" or its text opens with a [drill:…] tag; tagged fields
+    are parsed, untagged drill-category entries are listed with None fields
+    (they can't contribute to latest_by_type).
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    if until is None:
+        until = now.date().isoformat()
+    else:
+        validate_date(until)
+    if since is None:
+        since = (date_cls.fromisoformat(until) - timedelta(days=180)).isoformat()
+    else:
+        validate_date(since)
+    if drill_type is not None and not is_valid_drill_type(drill_type):
+        raise ValueError(
+            f"invalid drill_type {drill_type!r}: want lowercase [a-z0-9-], 1-32 chars"
+        )
+
+    try:
+        days = [d for d in await client.get_dates() if since <= d <= until]
+        rows: list[dict] = []
+        for day in sorted(days):
+            for e in await client.get_entries(day):
+                parsed = parse_drill_tag(e.get("text", ""))
+                if e.get("category") != "drill" and parsed is None:
+                    continue
+                if not e.get("datetime"):
+                    continue  # undateable — useless for cadence; skip
+                if drill_type is not None and (
+                    parsed is None or parsed["drill_type"] != drill_type
+                ):
+                    continue
+                pos = e.get("position") or None
+                # A partial fix (only one of lat/lon present) counts as no fix.
+                pos_out = (
+                    {"longitude": pos["longitude"], "latitude": pos["latitude"]}
+                    if pos and pos.get("latitude") is not None
+                    else None
+                )
+                rows.append(
+                    {
+                        "id": e["datetime"],
+                        "date": e["datetime"][:10],
+                        "time_display": _time_display(
+                            e["datetime"], pos_out, fallback_tz
+                        ),
+                        "drill_type": parsed["drill_type"] if parsed else None,
+                        "outcome": parsed["outcome"] if parsed else None,
+                        "duration_minutes": (
+                            parsed["duration_minutes"] if parsed else None
+                        ),
+                        "participants": parsed["participants"] if parsed else None,
+                        "notes": (
+                            parsed["notes"] if parsed else e.get("text") or None
+                        ),
+                        "position": pos_out,
+                        "position_display": _format_position(
+                            pos_out["latitude"] if pos_out else None,
+                            pos_out["longitude"] if pos_out else None,
+                        ),
+                    }
+                )
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        raise RuntimeError(
+            f"Logbook unavailable: cannot reach SignalK at {client.base_url}"
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        auth = _auth_error(exc, client.base_url)
+        if auth:
+            raise auth from exc
+        raise RuntimeError(
+            f"Logbook read failed (HTTP {exc.response.status_code})"
+        ) from exc
+
+    rows.sort(key=lambda r: r["id"])
+    latest_by_type: dict[str, str] = {}
+    for r in rows:
+        if r["drill_type"]:
+            latest_by_type[r["drill_type"]] = r["date"]
+    return {
+        "since": since,
+        "until": until,
+        "count": len(rows),
+        "drills": rows,
+        "latest_by_type": latest_by_type,
+    }
