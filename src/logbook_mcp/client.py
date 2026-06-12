@@ -50,17 +50,24 @@ class LogbookClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def post_entry(self, text: str) -> None:
+    async def post_entry(self, text: str, category: str | None = None) -> None:
         """Create an entry; the plugin enriches it server-side from live SignalK.
 
         ``ago: 0`` is always included — the plugin calls ``buffer.get(req.body.ago)``
         whenever its state buffer is non-empty, and omitting the field causes an
         HTTP 500 once the buffer has been populated.
 
+        ``category`` is sent only when given; the plugin defaults to
+        "navigation". The plugin copies it unvalidated, so values outside its
+        schema enum (e.g. "drill") write fine — validation is our job.
+
         POST returns a bare 201 with no body — callers re-fetch the day to see
         the created entry.
         """
-        resp = await self._http.post(f"{self._api}/logs", json={"text": text, "ago": 0})
+        body: dict = {"text": text, "ago": 0}
+        if category is not None:
+            body["category"] = category
+        resp = await self._http.post(f"{self._api}/logs", json=body)
         resp.raise_for_status()
 
     async def put_entry(self, date: str, datetime_key: str, entry: dict) -> None:

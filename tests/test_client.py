@@ -105,3 +105,22 @@ async def test_get_position_none_on_connect_error(client):
 async def test_put_entry_rejects_malformed_date(client):
     with pytest.raises(ValueError, match="invalid date"):
         await client.put_entry("junk", "2026-06-05T18:32:00.000Z", ENTRY)
+
+
+@respx.mock
+async def test_post_entry_sends_category_when_given(client):
+    route = respx.post(f"{API}/logs").respond(201)
+    await client.post_entry("MOB drill", category="drill")
+    assert json.loads(route.calls[0].request.content) == {
+        "text": "MOB drill",
+        "ago": 0,
+        "category": "drill",
+    }
+
+
+@respx.mock
+async def test_post_entry_omits_category_by_default(client):
+    # The plugin defaults to "navigation" server-side; don't send the field.
+    route = respx.post(f"{API}/logs").respond(201)
+    await client.post_entry("Sunset off Discovery Island")
+    assert "category" not in json.loads(route.calls[0].request.content)
