@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from logbook_mcp.client import LogbookClient, validate_date
+from logbook_mcp.drills import compose_drill_text, parse_drill_tag
 
 if TYPE_CHECKING:
     from timezonefinder import TimezoneFinder
@@ -184,6 +185,52 @@ async def mark_moment(
         "time_display": time_disp,
         "position": pos_out,
         "position_display": pos_display,
+    }
+
+
+async def log_drill(
+    client: LogbookClient,
+    drill_type: str,
+    outcome: str,
+    duration_minutes: int | None = None,
+    participants: list[str] | None = None,
+    notes: str | None = None,
+    position: dict | None = None,
+    fallback_tz: str = FALLBACK_TZ,
+    now: datetime | None = None,
+) -> dict:
+    """Record a safety drill in the ship's log.
+
+    Validation and the tag format live in drills.py; the write/confirm
+    plumbing is mark_moment's. Raises ValueError before any write when the
+    drill fields are invalid.
+    """
+    text = compose_drill_text(
+        drill_type, outcome,
+        duration_minutes=duration_minutes,
+        participants=participants,
+        notes=notes,
+    )
+    result = await mark_moment(
+        client, text=text, position=position,
+        fallback_tz=fallback_tz, now=now, category="drill",
+    )
+    # Echo normalized fields from the composed text (the round-trip-tested
+    # source of truth), not the raw inputs.
+    parsed = parse_drill_tag(text) or {}
+    spoken_type = drill_type.replace("-", " ")
+    confirmation = (
+        f"Logged {spoken_type} drill, {outcome}. "
+        f"{result['entry_display']}. {result['time_display']}."
+    )
+    return {
+        **result,
+        "confirmation": confirmation,
+        "drill_type": drill_type,
+        "outcome": outcome,
+        "duration_minutes": parsed.get("duration_minutes"),
+        "participants": parsed.get("participants"),
+        "notes": parsed.get("notes"),
     }
 
 
