@@ -44,3 +44,73 @@ def test_compose_rejects_bad_outcome():
 def test_compose_rejects_nonpositive_duration():
     with pytest.raises(ValueError, match="duration"):
         compose_drill_text("mob", "pass", duration_minutes=0)
+
+
+from logbook_mcp.drills import parse_drill_tag
+
+
+def test_parse_full_tag():
+    parsed = parse_drill_tag(
+        "[drill:mob outcome=pass duration=14m crew=Bryan,K] "
+        "Lifesling recovery under power."
+    )
+    assert parsed == {
+        "drill_type": "mob",
+        "outcome": "pass",
+        "duration_minutes": 14,
+        "participants": ["Bryan", "K"],
+        "notes": "Lifesling recovery under power.",
+    }
+
+
+def test_parse_minimal_tag():
+    assert parse_drill_tag("[drill:fire outcome=partial]") == {
+        "drill_type": "fire",
+        "outcome": "partial",
+        "duration_minutes": None,
+        "participants": None,
+        "notes": None,
+    }
+
+
+def test_compose_parse_round_trip():
+    text = compose_drill_text(
+        "steering-failure", "fail",
+        duration_minutes=25,
+        participants=["Bryan Clark"],
+        notes="Emergency tiller jammed; needs rework [see maintenance log].",
+    )
+    parsed = parse_drill_tag(text)
+    assert parsed == {
+        "drill_type": "steering-failure",
+        "outcome": "fail",
+        "duration_minutes": 25,
+        "participants": ["Bryan-Clark"],
+        "notes": "Emergency tiller jammed; needs rework [see maintenance log].",
+    }
+
+
+def test_parse_ignores_unknown_fields():
+    # Forward compatibility: a future writer may add fields we don't know.
+    parsed = parse_drill_tag("[drill:mob outcome=pass wind=15kn] notes")
+    assert parsed["outcome"] == "pass"
+    assert parsed["notes"] == "notes"
+
+
+def test_parse_non_drill_text_returns_none():
+    for text in (
+        "Beautiful sunset off Discovery Island",
+        "",
+        "[drill:] missing type",
+        "[drill:MOB outcome=pass] uppercase type",
+        "prose before [drill:mob outcome=pass] tag not at start",
+    ):
+        assert parse_drill_tag(text) is None
+
+
+def test_parse_tolerates_malformed_field_values():
+    # Bad field values degrade to None for that field; the tag still parses.
+    parsed = parse_drill_tag("[drill:mob outcome=heroic duration=fast]")
+    assert parsed["drill_type"] == "mob"
+    assert parsed["outcome"] is None
+    assert parsed["duration_minutes"] is None

@@ -58,3 +58,41 @@ def compose_drill_text(
 def is_valid_drill_type(drill_type: str) -> bool:
     """Shared by list_drills' filter validation."""
     return bool(_DRILL_TYPE_RE.match(drill_type or ""))
+
+
+_TAG_RE = re.compile(
+    r"^\[drill:([a-z0-9-]{1,32})((?:\s+[a-z]+=[^\s\]]+)*)\]\s*(.*)$",
+    re.DOTALL,
+)
+
+_DURATION_RE = re.compile(r"^\d+m$")
+
+
+def parse_drill_tag(text: str) -> dict | None:
+    """Parse a drill tag at the start of entry text.
+
+    Returns ``{drill_type, outcome, duration_minutes, participants, notes}``
+    or None when the text doesn't open with a well-formed tag. Unknown
+    ``key=value`` fields are ignored; recognized fields with malformed values
+    degrade to None rather than failing the whole tag.
+    """
+    m = _TAG_RE.match(text or "")
+    if not m:
+        return None
+    drill_type, raw_fields, notes = m.group(1), m.group(2), m.group(3)
+    parsed: dict = {
+        "drill_type": drill_type,
+        "outcome": None,
+        "duration_minutes": None,
+        "participants": None,
+        "notes": notes.strip() or None,
+    }
+    for field in raw_fields.split():
+        key, _, value = field.partition("=")
+        if key == "outcome" and value in VALID_OUTCOMES:
+            parsed["outcome"] = value
+        elif key == "duration" and _DURATION_RE.match(value):
+            parsed["duration_minutes"] = int(value[:-1])
+        elif key == "crew" and value:
+            parsed["participants"] = value.split(",")
+    return parsed
