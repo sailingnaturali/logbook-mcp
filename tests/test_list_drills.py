@@ -111,3 +111,23 @@ async def test_list_drills_unreachable_surfaces_runtime_error(client):
     respx.get(f"{API}/logs").mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(RuntimeError, match="Logbook unavailable"):
         await list_drills(client, now=NOW)
+
+
+@respx.mock
+async def test_list_drills_malformed_body_surfaces_runtime_error(client):
+    respx.get(f"{API}/logs").respond(200, content=b"not json")
+    with pytest.raises(RuntimeError, match="malformed data"):
+        await list_drills(client, now=NOW)
+
+
+@respx.mock
+async def test_list_drills_rejects_inverted_range(client):
+    with pytest.raises(ValueError, match="since"):
+        await list_drills(client, since="2026-07-01", until="2026-06-01", now=NOW)
+
+
+@respx.mock
+async def test_list_drills_auth_error_mentions_token(client):
+    respx.get(f"{API}/logs").respond(401)
+    with pytest.raises(RuntimeError, match="LOGBOOK_SK_TOKEN"):
+        await list_drills(client, now=NOW)

@@ -66,3 +66,14 @@ async def test_log_drill_rejects_invalid_input_without_writing(client):
     with pytest.raises(ValueError, match="outcome"):
         await log_drill(client, drill_type="mob", outcome="heroic", now=NOW)
     assert not post.called
+
+
+@respx.mock
+async def test_log_drill_propagates_unconfirmed_write_error(client):
+    # POST succeeds but the re-fetch fails: mark_moment's "recorded but could
+    # not be confirmed" honesty must survive the log_drill wrapper.
+    respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-12").respond(200, json=[])
+    respx.get(f"{API}/logs/2026-06-11").respond(200, json=[])
+    with pytest.raises(RuntimeError, match="could not be confirmed"):
+        await log_drill(client, drill_type="mob", outcome="pass", now=NOW)

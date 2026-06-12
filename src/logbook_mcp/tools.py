@@ -217,6 +217,7 @@ async def log_drill(
     )
     # Echo normalized fields from the composed text (the round-trip-tested
     # source of truth), not the raw inputs.
+    # compose_drill_text guarantees valid tag syntax, so the parse cannot fail.
     parsed = parse_drill_tag(text) or {}
     spoken_type = drill_type.replace("-", " ")
     confirmation = (
@@ -366,6 +367,12 @@ async def list_drills(
             f"invalid drill_type {drill_type!r}: want lowercase [a-z0-9-], 1-32 chars"
         )
 
+    # Validate since/until range before attempting to fetch
+    since_date = date_cls.fromisoformat(since)
+    until_date = date_cls.fromisoformat(until)
+    if since_date > until_date:
+        raise ValueError(f"since ({since!r}) must not be after until ({until!r})")
+
     try:
         days = [d for d in await client.get_dates() if since <= d <= until]
         rows: list[dict] = []
@@ -420,6 +427,10 @@ async def list_drills(
             raise auth from exc
         raise RuntimeError(
             f"Logbook read failed (HTTP {exc.response.status_code})"
+        ) from exc
+    except ValueError as exc:                  # malformed 200 body (JSONDecodeError)
+        raise RuntimeError(
+            f"Logbook read returned malformed data from {client.base_url}"
         ) from exc
 
     rows.sort(key=lambda r: r["id"])
