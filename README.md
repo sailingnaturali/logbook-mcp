@@ -12,8 +12,16 @@ ecosystem audit, the decision, and the integration quirks:
 
 ## Tools
 
-- `mark_moment(text, position?)` — record a moment in the ship's log; position, speed, wind, and barometer are auto-enriched server-side from the vessel's sensors; `position` only needed to override the GPS fix.
+- `mark_moment(text, category?, position?)` — record a moment in the ship's log; position, speed, wind, and barometer are auto-enriched server-side from the vessel's sensors; `position` only needed to override the GPS fix.
 - `read_entries(date?)` — read a day's log entries (default: today, vessel-local).
+- `log_drill(drill_type, outcome, duration_minutes?, participants?, notes?, position?)` — record a safety drill (MOB, fire, abandon-ship, …) as a structured log entry with a `[drill:type …]` tag.
+- `list_drills(drill_type?, since?, until?)` — list drill entries from the log (default: last 180 days), with a `latest_by_type` summary for cadence checks.
+
+**Example — logging a drill:**
+
+```
+log_drill(drill_type="mob", outcome="pass", duration_minutes=14, participants=["Bryan", "K"])
+```
 
 ## Installation
 

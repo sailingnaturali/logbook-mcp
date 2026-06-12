@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-06-12
+
+- `log_drill` / `list_drills`: safety drills as structured log entries
+  (`[drill:type …]` tag + `category: "drill"`), with a `latest_by_type`
+  summary for cadence checks.
+- `mark_moment` accepts an optional `category`.
+- `LogbookClient`: `post_entry` category, `get_dates` day index.
+
 ## 0.2.0 — 2026-06-05
 
 **Breaking: SQLite store replaced by signalk-logbook.** logbook-mcp is now a

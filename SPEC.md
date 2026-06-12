@@ -52,6 +52,10 @@ and barometer are captured automatically from the vessel's sensors. Pass
   "required": ["text"],
   "properties": {
     "text": { "type": "string", "minLength": 1 },
+    "category": {
+      "type": "string",
+      "enum": ["navigation", "engine", "radio", "maintenance", "drill"]
+    },
     "position": {
       "type": "object",
       "additionalProperties": false,
@@ -64,6 +68,10 @@ and barometer are captured automatically from the vessel's sensors. Pass
   }
 }
 ```
+
+`category` is optional. When omitted, the signalk-logbook plugin defaults to
+`"navigation"`. Valid values: `navigation`, `engine`, `radio`, `maintenance`,
+`drill`.
 
 **Response** (JSON text content)
 
@@ -187,6 +195,151 @@ no fix is recorded for that entry.
 
 ---
 
+### Tool: `log_drill`
+
+Record a safety drill in the ship's log. Position and conditions are captured
+automatically from the vessel's sensors; pass `position` only to override the
+GPS fix. Extends `mark_moment` with drill-specific fields: composes a
+`[drill:type …]` tag as the entry text and sets `category: "drill"`.
+
+**Input schema** (from `src/logbook_mcp/server.py`)
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["drill_type", "outcome"],
+  "properties": {
+    "drill_type": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" },
+    "outcome":    { "type": "string", "enum": ["pass", "partial", "fail"] },
+    "duration_minutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+    "participants": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    },
+    "notes": { "type": "string" },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["longitude", "latitude"],
+      "properties": {
+        "longitude": { "type": "number", "minimum": -180, "maximum": 180 },
+        "latitude":  { "type": "number", "minimum": -90,  "maximum": 90  }
+      }
+    }
+  }
+}
+```
+
+**Tag format** (written to entry text by `src/logbook_mcp/drills.py`)
+
+```
+[drill:<drill_type> outcome=<outcome> duration=<n>m crew=<p1>,<p2>] notes…
+```
+
+- `drill_type`: lowercase `[a-z0-9-]`, 1–32 characters (e.g. `mob`, `fire`,
+  `abandon-ship`). Invalid values are rejected before any write.
+- `outcome`: one of `pass`, `partial`, `fail`.
+- `duration`: written as `<n>m` (e.g. `duration=14m`); omitted when not
+  supplied. `n` must be a whole number ≥ 1.
+- `crew`: participant names joined by commas. Internal whitespace in a name is
+  normalized to hyphens (e.g. `"K Smith"` → `K-Smith`). Names containing
+  commas or brackets are rejected.
+- Notes are written as prose after the closing `]`, separated by a space.
+  They are omitted from the tag when absent.
+
+**Response**
+
+```json
+{
+  "id": "2026-06-12T18:00:00Z",
+  "entry_display": "Entry 4",
+  "confirmation": "Logged mob drill, pass. Entry 4. 11:00.",
+  "text": "[drill:mob outcome=pass duration=14m crew=Bryan,K]",
+  "timestamp": "2026-06-12T18:00:00Z",
+  "time_display": "11:00",
+  "position": { "longitude": -123.27, "latitude": 48.42 },
+  "position_display": "48.4 North, 123.3 West",
+  "drill_type": "mob",
+  "outcome": "pass",
+  "duration_minutes": 14,
+  "participants": ["Bryan", "K"],
+  "notes": null
+}
+```
+
+- All `mark_moment` fields are present.
+- `confirmation` names the drill type (hyphens replaced with spaces) and
+  outcome: `"Logged <type> drill, <outcome>. <entry_display>. <time_display>."`.
+- `drill_type`, `outcome`, `duration_minutes`, `participants`, and `notes` are
+  the normalized values parsed back from the composed tag (the round-trip-tested
+  source of truth).
+
+---
+
+### Tool: `list_drills`
+
+List safety drills from the ship's log. Window bounds are UTC calendar-day
+boundaries (matching how signalk-logbook stores day files).
+
+**Input schema** (from `src/logbook_mcp/server.py`)
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "drill_type": { "type": "string", "pattern": "^[a-z0-9-]{1,32}$" },
+    "since":      { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "until":      { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+  }
+}
+```
+
+All parameters are optional.
+
+- Default window: 180 UTC days ending today (`until` defaults to today UTC,
+  `since` defaults to `until − 180 days`).
+- `since` after `until` is rejected with a `ValueError` before any fetch.
+- `drill_type` filters to a single drill type; invalid values are rejected.
+
+**Response**
+
+```json
+{
+  "since": "2025-12-14",
+  "until": "2026-06-12",
+  "count": 2,
+  "drills": [
+    {
+      "id": "2026-05-01T17:00:00Z",
+      "date": "2026-05-01",
+      "time_display": "10:00",
+      "drill_type": "mob",
+      "outcome": "pass",
+      "duration_minutes": 12,
+      "participants": ["Bryan", "K"],
+      "notes": null,
+      "position": { "longitude": -123.27, "latitude": 48.42 },
+      "position_display": "48.4 North, 123.3 West"
+    }
+  ],
+  "latest_by_type": {
+    "mob": "2026-05-01"
+  }
+}
+```
+
+- `drills` is sorted ascending by `id` (UTC datetime string).
+- `latest_by_type`: maps each drill type to the date (`YYYY-MM-DD`) of its
+  most recent entry. Useful for cadence checks (e.g. "last MOB drill was 42
+  days ago"). Only entries with a parsed `[drill:…]` tag contribute; entries
+  that carry `category: "drill"` but no tag are listed in `drills` with all
+  drill fields as `None` and do **not** appear in `latest_by_type`.
+
+---
+
 ## Phase 0.5 — planned
 
 Goal: enough surface for an LLM agent to produce a human-reviewable sea-time
@@ -251,13 +404,14 @@ review. Reads entries via `read_entries` rather than joining database tables.
 - `0.1.x` — SQLite Phase 0 (historical; `mark_moment` only, no REST backend).
 - `0.2.0` — REST backend over signalk-logbook; `mark_moment` and `read_entries`
   shipped; `LOGBOOK_DB_PATH` retired.
+- `0.3.0` — vessel-local day windows; `LogbookClient.get_entries` date param.
+- `0.4.0` — drill surface: `log_drill`, `list_drills`; `mark_moment` `category`
+  param; `LogbookClient.post_entry` category + `get_dates`.
 - `1.0.0` — sea-time export surface (`export_uscg_form` / `export_tc_form`)
   stable after at least one real sea-service submission.
 
 ## Open design questions
 
-- Should `mark_moment` accept a `category` parameter, or always default to
-  `"navigation"`?
 - Do we want a `redact_moment(id)` tool, or is curation always via the
   SignalK admin UI?
 - Should the server expose MCP resources (e.g. `logbook://days/2026-05-21`)
