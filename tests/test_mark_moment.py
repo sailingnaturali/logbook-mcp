@@ -164,3 +164,13 @@ async def test_mark_moment_put_failure_after_post_is_honest(client):
             position={"longitude": -123.30, "latitude": 48.45},
             now=NOW,
         )
+
+
+@respx.mock
+async def test_mark_moment_sends_category(client):
+    post = respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[CREATED])
+
+    await mark_moment(client, text="Checked in with VTS", category="radio", now=NOW)
+
+    assert json.loads(post.calls[0].request.content)["category"] == "radio"
