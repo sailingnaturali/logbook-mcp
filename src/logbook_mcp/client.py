@@ -50,6 +50,14 @@ class LogbookClient:
         resp.raise_for_status()
         return resp.json()
 
+    async def get_dates(self) -> list[str]:
+        """All YYYY-MM-DD days that have a log file. 404 -> no logs yet -> []."""
+        resp = await self._http.get(f"{self._api}/logs")
+        if resp.status_code == 404:
+            return []
+        resp.raise_for_status()
+        return resp.json()
+
     async def post_entry(self, text: str, category: str | None = None) -> None:
         """Create an entry; the plugin enriches it server-side from live SignalK.
 

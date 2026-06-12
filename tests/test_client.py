@@ -124,3 +124,17 @@ async def test_post_entry_omits_category_by_default(client):
     route = respx.post(f"{API}/logs").respond(201)
     await client.post_entry("Sunset off Discovery Island")
     assert "category" not in json.loads(route.calls[0].request.content)
+
+
+@respx.mock
+async def test_get_dates_returns_day_index(client):
+    respx.get(f"{API}/logs").respond(
+        200, json=["2026-06-01", "2026-06-05", "2026-06-12"]
+    )
+    assert await client.get_dates() == ["2026-06-01", "2026-06-05", "2026-06-12"]
+
+
+@respx.mock
+async def test_get_dates_404_means_no_logs(client):
+    respx.get(f"{API}/logs").respond(404)
+    assert await client.get_dates() == []
