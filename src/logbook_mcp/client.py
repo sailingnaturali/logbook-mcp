@@ -3,11 +3,38 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import quote
+import socket
+from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _resolve_local_host(base_url: str) -> str:
+    """Resolve a ``.local`` mDNS host to IPv4 at construction time.
+
+    macOS httpx async connect hangs on ``.local`` hostnames — getaddrinfo offers
+    an IPv6 candidate first and Happy-Eyeballs waits out the full timeout before
+    IPv4 fallback. Resolve to IPv4 via the system resolver and connect to the IP.
+    Non-``.local`` hosts and resolution failures are returned unchanged. (Canonical
+    copy in signalk-mcp; shared-helper consolidation tracked in planning ADR 0004.)
+    """
+    parts = urlsplit(base_url)
+    host = parts.hostname
+    if not host or not host.endswith(".local"):
+        return base_url
+    try:
+        infos = socket.getaddrinfo(host, parts.port, socket.AF_INET,
+                                   socket.SOCK_STREAM)
+    except (socket.gaierror, OSError):
+        return base_url
+    if not infos:
+        return base_url
+    ip = infos[0][4][0]
+    netloc = ip if parts.port is None else f"{ip}:{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query,
+                       parts.fragment))
 
 
 def validate_date(date: str) -> None:
@@ -26,7 +53,7 @@ class LogbookClient:
 
     def __init__(self, base_url: str, token: str | None = None,
                  timeout: float = 5.0) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = _resolve_local_host(base_url.rstrip("/"))
         # signalk-server's admin gate accepts the Authorization header, but
         # the logbook plugin reads the author from the JAUTHENTICATION
         # cookie — send the token both ways.
