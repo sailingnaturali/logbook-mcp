@@ -1,6 +1,6 @@
 [project]
 name = "logbook-mcp"
-version = "0.4.1"
+version = "0.4.2"
 description = "MCP server over signalk-logbook: marked moments, day reads, and (future) USCG/TC sea-time export"
 readme = "README.md"
 authors = [
@@ -10,8 +10,12 @@ requires-python = ">=3.11"
 dependencies = [
     "mcp>=1.27.1,<2",
     "httpx>=0.28.1",
+    "naturali-mcp-netutil>=0.1.0",
     "timezonefinder>=8.2.4",
 ]
+
+[tool.uv.sources]
+naturali-mcp-netutil = { git = "https://github.com/sailingnaturali/naturali-mcp-netutil", tag = "v0.1.0" }
 
 [project.scripts]
 logbook-mcp = "logbook_mcp.server:main"

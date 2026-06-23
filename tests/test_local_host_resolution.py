@@ -1,5 +1,6 @@
-"""mDNS .local hosts hang httpx's async connect on macOS; LogbookClient resolves
-a .local host to IPv4 at construction. (Mirrors signalk-mcp's fix.)"""
+"""LogbookClient resolves a .local host to IPv4 at construction (via the shared
+naturali-mcp-netutil helper). Helper logic is tested upstream; here we prove the
+client wires it."""
 import socket
 from unittest.mock import patch
 
@@ -12,21 +13,13 @@ def _fake_getaddrinfo(ip):
     return _f
 
 
-def test_local_host_resolved_to_ipv4():
-    with patch("logbook_mcp.client.socket.getaddrinfo",
+def test_client_resolves_local_host_to_ipv4():
+    with patch("naturali_mcp_netutil.host.socket.getaddrinfo",
                _fake_getaddrinfo("192.168.68.60")):
         c = LogbookClient("http://naturalaspi.local:3000")
     assert c.base_url == "http://192.168.68.60:3000"
 
 
-def test_non_local_host_unchanged():
+def test_client_non_local_host_unchanged():
     assert LogbookClient("http://192.168.68.60:3000").base_url == \
         "http://192.168.68.60:3000"
-
-
-def test_local_resolution_failure_falls_back():
-    def _boom(*a, **k):
-        raise socket.gaierror("no resolve")
-    with patch("logbook_mcp.client.socket.getaddrinfo", _boom):
-        c = LogbookClient("http://naturalaspi.local:3000")
-    assert c.base_url == "http://naturalaspi.local:3000"
