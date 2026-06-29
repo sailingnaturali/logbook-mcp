@@ -16,6 +16,14 @@ VALID_OUTCOMES = ("pass", "partial", "fail")
 _DRILL_TYPE_RE = re.compile(r"^[a-z0-9-]{1,32}$")
 
 
+def validate_drill_type(drill_type: str | None) -> None:
+    """Raise ValueError unless drill_type is lowercase [a-z0-9-], 1-32 chars."""
+    if not _DRILL_TYPE_RE.match(drill_type or ""):
+        raise ValueError(
+            f"invalid drill_type {drill_type!r}: want lowercase [a-z0-9-], 1-32 chars"
+        )
+
+
 def _normalize_participant(name: str) -> str:
     """Tag fields split on whitespace and crew splits on commas, so names
     may contain neither: internal whitespace becomes hyphens, commas and
@@ -38,10 +46,7 @@ def compose_drill_text(
     notes: str | None = None,
 ) -> str:
     """Build the drill entry text: bracket tag, then optional prose."""
-    if not _DRILL_TYPE_RE.match(drill_type or ""):
-        raise ValueError(
-            f"invalid drill_type {drill_type!r}: want lowercase [a-z0-9-], 1-32 chars"
-        )
+    validate_drill_type(drill_type)
     if outcome not in VALID_OUTCOMES:
         raise ValueError(f"invalid outcome {outcome!r}: want one of {VALID_OUTCOMES}")
     fields = [f"outcome={outcome}"]
@@ -57,11 +62,6 @@ def compose_drill_text(
     if notes and notes.strip():
         return f"{tag} {notes.strip()}"
     return tag
-
-
-def is_valid_drill_type(drill_type: str) -> bool:
-    """Shared by list_drills' filter validation."""
-    return bool(_DRILL_TYPE_RE.match(drill_type or ""))
 
 
 _TAG_RE = re.compile(

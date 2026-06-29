@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from logbook_mcp.client import LogbookClient, validate_date
-from logbook_mcp.drills import compose_drill_text, is_valid_drill_type, parse_drill_tag
+from logbook_mcp.drills import compose_drill_text, parse_drill_tag, validate_drill_type
 
 if TYPE_CHECKING:
     from timezonefinder import TimezoneFinder
@@ -41,6 +41,24 @@ def _format_position(lat: float | None, lon: float | None) -> str | None:
     lat_part = f"{abs(lat):.1f}" if lat == 0 else f"{abs(lat):.1f} {'North' if lat > 0 else 'South'}"
     lon_part = f"{abs(lon):.1f}" if lon == 0 else f"{abs(lon):.1f} {'East' if lon > 0 else 'West'}"
     return f"{lat_part}, {lon_part}"
+
+
+def _position_fields(entry: dict) -> tuple[dict | None, str | None]:
+    """(pos_out, position_display) for an entry.
+
+    A partial fix (only one of lat/lon present) counts as no fix.
+    """
+    pos = entry.get("position") or None
+    pos_out = (
+        {"longitude": pos["longitude"], "latitude": pos["latitude"]}
+        if pos and pos.get("latitude") is not None
+        else None
+    )
+    display = _format_position(
+        pos_out["latitude"] if pos_out else None,
+        pos_out["longitude"] if pos_out else None,
+    )
+    return pos_out, display
 
 
 def _entry_timezone(position: dict | None, fallback_tz: str) -> zoneinfo.ZoneInfo:
@@ -160,18 +178,8 @@ async def mark_moment(
             f"({exc.__class__.__name__}); check the log via read_entries"
         ) from exc
 
-    pos = entry.get("position") or None
-    # A partial fix (only one of lat/lon present) counts as no fix.
-    pos_out = (
-        {"longitude": pos["longitude"], "latitude": pos["latitude"]}
-        if pos and pos.get("latitude") is not None
-        else None
-    )
+    pos_out, pos_display = _position_fields(entry)
     time_disp = _time_display(entry["datetime"], pos_out, fallback_tz)
-    pos_display = _format_position(
-        pos_out["latitude"] if pos_out else None,
-        pos_out["longitude"] if pos_out else None,
-    )
     # One ready-to-speak string so voice agents relay it verbatim instead of
     # re-assembling (and paraphrasing) the individual fields.
     parts = [f"Entry {ordinal}", time_disp] + ([pos_display] if pos_display else [])
@@ -307,13 +315,7 @@ async def read_entries(
     entries = []
     for n, e in enumerate(kept, start=1):
         dt_str = e.get("datetime", "")
-        pos = e.get("position") or None
-        # A partial fix (only one of lat/lon present) counts as no fix.
-        pos_out = (
-            {"longitude": pos["longitude"], "latitude": pos["latitude"]}
-            if pos and pos.get("latitude") is not None
-            else None
-        )
+        pos_out, pos_display = _position_fields(e)
         try:
             dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00")) if dt_str else None
         except ValueError:
@@ -327,10 +329,7 @@ async def read_entries(
                 "category": e.get("category", "navigation"),
                 "author": e.get("author"),
                 "position": pos_out,
-                "position_display": _format_position(
-                    pos_out["latitude"] if pos_out else None,
-                    pos_out["longitude"] if pos_out else None,
-                ),
+                "position_display": pos_display,
             }
         )
     return {"date": date, "count": len(entries), "entries": entries}
@@ -362,10 +361,8 @@ async def list_drills(
         since = (date_cls.fromisoformat(until) - timedelta(days=180)).isoformat()
     else:
         validate_date(since)
-    if drill_type is not None and not is_valid_drill_type(drill_type):
-        raise ValueError(
-            f"invalid drill_type {drill_type!r}: want lowercase [a-z0-9-], 1-32 chars"
-        )
+    if drill_type is not None:
+        validate_drill_type(drill_type)
 
     # Validate since/until range before attempting to fetch
     since_date = date_cls.fromisoformat(since)
@@ -387,13 +384,7 @@ async def list_drills(
                     parsed is None or parsed["drill_type"] != drill_type
                 ):
                     continue
-                pos = e.get("position") or None
-                # A partial fix (only one of lat/lon present) counts as no fix.
-                pos_out = (
-                    {"longitude": pos["longitude"], "latitude": pos["latitude"]}
-                    if pos and pos.get("latitude") is not None
-                    else None
-                )
+                pos_out, pos_display = _position_fields(e)
                 rows.append(
                     {
                         "id": e["datetime"],
@@ -411,10 +402,7 @@ async def list_drills(
                             parsed["notes"] if parsed else e.get("text") or None
                         ),
                         "position": pos_out,
-                        "position_display": _format_position(
-                            pos_out["latitude"] if pos_out else None,
-                            pos_out["longitude"] if pos_out else None,
-                        ),
+                        "position_display": pos_display,
                     }
                 )
     except (httpx.ConnectError, httpx.TimeoutException) as exc:
