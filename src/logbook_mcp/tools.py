@@ -164,6 +164,7 @@ async def mark_moment(
     fallback_tz: str = FALLBACK_TZ,
     now: datetime | None = None,
     category: str | None = None,
+    origin: str = "agent",
 ) -> dict:
     """Record a moment in the ship's log via signalk-logbook.
 
@@ -174,7 +175,7 @@ async def mark_moment(
         now = datetime.now(timezone.utc)
 
     try:
-        await client.post_entry(text, category=category)
+        await client.post_entry(text, category=category, origin=origin)
     except (httpx.ConnectError, httpx.TimeoutException) as exc:
         raise RuntimeError(
             f"Logbook unavailable: cannot reach SignalK at {client.base_url} "

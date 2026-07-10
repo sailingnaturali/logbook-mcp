@@ -127,6 +127,25 @@ async def test_post_entry_omits_category_by_default(client):
 
 
 @respx.mock
+async def test_post_entry_omits_origin_by_default(client):
+    # origin is only sent when explicitly provided for forward-compatibility.
+    route = respx.post(f"{API}/logs").respond(201)
+    await client.post_entry("Sunset off Discovery Island")
+    assert "origin" not in json.loads(route.calls[0].request.content)
+
+
+@respx.mock
+async def test_post_entry_sends_origin_when_given(client):
+    route = respx.post(f"{API}/logs").respond(201)
+    await client.post_entry("Dictated text", origin="manual")
+    assert json.loads(route.calls[0].request.content) == {
+        "text": "Dictated text",
+        "ago": 0,
+        "origin": "manual",
+    }
+
+
+@respx.mock
 async def test_get_dates_returns_day_index(client):
     respx.get(f"{API}/logs").respond(
         200, json=["2026-06-01", "2026-06-05", "2026-06-12"]

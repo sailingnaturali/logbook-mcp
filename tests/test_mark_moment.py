@@ -50,6 +50,7 @@ async def test_mark_moment_posts_text_and_returns_contract(client):
     assert json.loads(post.calls[0].request.content) == {
         "text": "Beautiful sunset off Discovery Island",
         "ago": 0,
+        "origin": "agent",
     }
     assert result["id"] == "2026-06-05T18:32:00.000Z"
     assert result["entry_display"] == "Entry 2"  # 2nd entry of the day
@@ -174,3 +175,13 @@ async def test_mark_moment_sends_category(client):
     await mark_moment(client, text="Checked in with VTS", category="radio", now=NOW)
 
     assert json.loads(post.calls[0].request.content)["category"] == "radio"
+
+
+@respx.mock
+async def test_mark_moment_manual_origin_for_dictations(client):
+    post = respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[CREATED])
+
+    await mark_moment(client, text="Dictated line", now=NOW, origin="manual")
+
+    assert json.loads(post.calls[0].request.content)["origin"] == "manual"

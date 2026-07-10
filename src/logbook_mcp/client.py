@@ -59,7 +59,8 @@ class LogbookClient:
         resp.raise_for_status()
         return resp.json()
 
-    async def post_entry(self, text: str, category: str | None = None) -> None:
+    async def post_entry(self, text: str, category: str | None = None,
+                         origin: str | None = None) -> None:
         """Create an entry; the plugin enriches it server-side from live SignalK.
 
         ``ago: 0`` is always included — the plugin calls ``buffer.get(req.body.ago)``
@@ -70,12 +71,18 @@ class LogbookClient:
         "navigation". The plugin copies it unvalidated, so values outside its
         schema enum (e.g. "drill") write fine — validation is our job.
 
+        ``origin`` rides in the body for forward-compatibility — upstream's
+        whitelist drops it until the origin-field PR ships, then it becomes
+        the entry's explicit provenance.
+
         POST returns a bare 201 with no body — callers re-fetch the day to see
         the created entry.
         """
         body: dict = {"text": text, "ago": 0}
         if category is not None:
             body["category"] = category
+        if origin is not None:
+            body["origin"] = origin
         resp = await self._http.post(f"{self._api}/logs", json=body)
         resp.raise_for_status()
 

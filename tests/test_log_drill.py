@@ -48,6 +48,7 @@ async def test_log_drill_writes_tagged_drill_entry(client):
     assert body["text"] == (
         "[drill:mob outcome=pass duration=14m crew=Bryan,K] Lifesling recovery."
     )
+    assert body["origin"] == "agent"
     # mark_moment's write/confirm contract is inherited
     assert result["id"] == "2026-06-12T20:29:50.000Z"
     assert result["drill_type"] == "mob"
