@@ -165,11 +165,13 @@ async def mark_moment(
     now: datetime | None = None,
     category: str | None = None,
     origin: str = "agent",
+    author: str | None = None,
 ) -> dict:
     """Record a moment in the ship's log via signalk-logbook.
 
     The plugin snapshots position/heading/speed/wind/barometer server-side.
     An explicit ``position`` overrides the snapshotted fix via a follow-up PUT.
+    An explicit ``author`` overrides the token principal via the same PUT.
     """
     if now is None:
         now = datetime.now(timezone.utc)
@@ -194,15 +196,19 @@ async def mark_moment(
     try:
         entry, ordinal = await _newest_entry(client, now)
 
-        if position is not None:
-            entry = {
-                **entry,
-                "position": {
+        needs_put = position is not None or author is not None
+        if needs_put:
+            entry = {**entry}
+            if position is not None:
+                entry["position"] = {
                     "longitude": position["longitude"],
                     "latitude": position["latitude"],
                     "source": "manual",
-                },
-            }
+                }
+            if author is not None:
+                # Upstream PUT takes the body wholesale, so a body-supplied
+                # author replaces the token principal the POST stamped.
+                entry["author"] = author
             day = entry["datetime"][:10]
             await client.put_entry(day, entry["datetime"], entry)
     except RuntimeError:
@@ -219,6 +225,8 @@ async def mark_moment(
     # re-assembling (and paraphrasing) the individual fields.
     parts = [f"Entry {ordinal}", time_disp] + ([pos_display] if pos_display else [])
     confirmation = "Logged. " + ". ".join(parts) + "."
+    if author is not None:
+        confirmation += f" Logged as {author}."
     return {
         "id": entry["datetime"],
         "entry_display": f"Entry {ordinal}",
@@ -228,6 +236,7 @@ async def mark_moment(
         "time_display": time_disp,
         "position": pos_out,
         "position_display": pos_display,
+        "author": entry.get("author"),
     }
 
 

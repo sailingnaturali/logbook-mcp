@@ -185,3 +185,35 @@ async def test_mark_moment_manual_origin_for_dictations(client):
     await mark_moment(client, text="Dictated line", now=NOW, origin="manual")
 
     assert json.loads(post.calls[0].request.content)["origin"] == "manual"
+
+
+@respx.mock
+async def test_mark_moment_author_attributes_via_put(client):
+    respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[CREATED])
+    put = respx.put(
+        f"{API}/logs/2026-06-05/2026-06-05T18%3A32%3A00.000Z"
+    ).respond(200)
+
+    result = await mark_moment(
+        client, text="Dictated line", now=NOW, origin="manual", author="Bryan"
+    )
+
+    body = json.loads(put.calls[0].request.content)
+    assert body["author"] == "Bryan"
+    assert body["datetime"] == "2026-06-05T18:32:00.000Z"
+    assert result["author"] == "Bryan"
+    assert result["confirmation"] == (
+        "Logged. Entry 1. 11:32. 48.4 North, 123.3 West. Logged as Bryan."
+    )
+
+
+@respx.mock
+async def test_mark_moment_without_author_keeps_token_author(client):
+    respx.post(f"{API}/logs").respond(201)
+    respx.get(f"{API}/logs/2026-06-05").respond(200, json=[CREATED])
+
+    result = await mark_moment(client, text="x", now=NOW)
+
+    assert result["author"] == "naturali"  # CREATED's author, untouched
+    assert "Logged as" not in result["confirmation"]
