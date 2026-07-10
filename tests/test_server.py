@@ -35,6 +35,7 @@ async def test_list_tools_exposes_all_tools(lb_client):
         tools = await client.list_tools()
         assert {t.name for t in tools.tools} == {
             "mark_moment", "read_entries", "log_drill", "list_drills",
+            "amend_entry_author",
         }
         mark = next(t for t in tools.tools if t.name == "mark_moment")
         assert mark.inputSchema["properties"]["category"]["enum"] == [
@@ -161,3 +162,27 @@ async def test_list_drills_round_trip_through_server(lb_client):
         payload = json.loads(result.content[0].text)
         assert payload["count"] == 1
         assert payload["latest_by_type"] == {"mob": "2026-06-12"}
+
+
+async def test_tool_list_includes_provenance_surface(lb_client):
+    server = build_server(lb_client)
+    async with create_connected_server_and_client_session(server) as client:
+        tools_result = await client.list_tools()
+        tools = {t.name: t for t in tools_result.tools}
+        assert "amend_entry_author" in tools
+        mm = tools["mark_moment"].inputSchema["properties"]
+        assert mm["author"] == {"type": "string", "minLength": 1}
+        assert mm["origin"] == {"type": "string", "enum": ["manual", "agent"]}
+        re_props = tools["read_entries"].inputSchema["properties"]
+        assert re_props["origin"] == {
+            "type": "string", "enum": ["manual", "auto", "agent"]
+        }
+
+
+def test_env_config_parses_author_sets(monkeypatch):
+    from logbook_mcp.server import _env_config
+    monkeypatch.setenv("LOGBOOK_AGENT_AUTHORS", "poseidon, scribe")
+    monkeypatch.setenv("LOGBOOK_AUTO_AUTHORS", "dsc-logger")
+    cfg = _env_config()
+    assert cfg[4] == frozenset({"poseidon", "scribe"})
+    assert cfg[5] == frozenset({"dsc-logger"})
