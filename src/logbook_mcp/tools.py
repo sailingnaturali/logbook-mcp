@@ -22,6 +22,40 @@ if TYPE_CHECKING:
 # used by both tools and the server wiring (LOGBOOK_TZ overrides at startup).
 FALLBACK_TZ = "America/Vancouver"
 
+# Provenance vocabulary (one vocabulary everywhere): manual = a human composed
+# the words (typed or dictated), agent = an AI agent composed them, auto =
+# unattended machinery (notification/hourly/trigger entries).
+ORIGINS = ("manual", "auto", "agent")
+
+# Token principals whose entries are agent-written. "hermes" is the legacy
+# pre-Poseidon token name still on 2026-06 archive entries.
+DEFAULT_AGENT_AUTHORS = frozenset({"hermes", "poseidon"})
+
+
+def derive_origin(
+    entry: dict,
+    agent_authors: frozenset[str] = DEFAULT_AGENT_AUTHORS,
+    auto_authors: frozenset[str] = frozenset(),
+) -> str:
+    """Provenance of a logbook entry: explicit origin field, else author heuristic.
+
+    Heuristic (pre-upstream archives): empty author = the plugin's own
+    unattended writers; a known agent/auto token principal = that class;
+    any other author = a person.
+    """
+    origin = entry.get("origin")
+    if origin in ORIGINS:
+        return origin
+    author = entry.get("author") or ""
+    if not author:
+        return "auto"
+    if author in agent_authors:
+        return "agent"
+    if author in auto_authors:
+        return "auto"
+    return "manual"
+
+
 _tf: "TimezoneFinder | None" = None
 
 
