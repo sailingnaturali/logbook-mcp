@@ -240,6 +240,49 @@ async def mark_moment(
     }
 
 
+async def amend_entry_author(
+    client: LogbookClient,
+    entry_id: str,
+    author: str,
+) -> dict:
+    """Reattribute an existing entry — the voice-correction path.
+
+    ``entry_id`` is the entry's datetime key (the ``id`` returned by
+    mark_moment/read_entries). PUT takes the body wholesale upstream, so
+    setting author here replaces the assumed one.
+    """
+    date = entry_id[:10]
+    validate_date(date)  # raises ValueError on malformed ids
+    try:
+        entries = await client.get_entries(date)
+        match = next(
+            (e for e in entries if e.get("datetime") == entry_id), None
+        )
+        if match is None:
+            raise RuntimeError(
+                f"No log entry with id {entry_id}; check read_entries"
+            )
+        await client.put_entry(date, entry_id, {**match, "author": author})
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        raise RuntimeError(
+            f"Logbook unavailable: cannot reach SignalK at {client.base_url} "
+            "— entry NOT corrected"
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        auth = _auth_error(exc, client.base_url)
+        if auth:
+            raise auth from exc
+        raise RuntimeError(
+            f"Logbook update failed (HTTP {exc.response.status_code}) "
+            "— entry NOT corrected"
+        ) from exc
+    return {
+        "id": entry_id,
+        "author": author,
+        "confirmation": f"Corrected. Entry now logged as {author}.",
+    }
+
+
 async def log_drill(
     client: LogbookClient,
     drill_type: str,
