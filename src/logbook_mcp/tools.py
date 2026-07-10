@@ -282,6 +282,9 @@ async def read_entries(
     date: str | None = None,
     fallback_tz: str = FALLBACK_TZ,
     now: datetime | None = None,
+    origin: str | None = None,
+    agent_authors: frozenset[str] = DEFAULT_AGENT_AUTHORS,
+    auto_authors: frozenset[str] = frozenset(),
 ) -> dict:
     """Read a day's log entries (default: today in vessel-local time).
 
@@ -294,6 +297,9 @@ async def read_entries(
     A vessel that crossed a timezone boundary mid-day is rendered consistently
     in where-it-is-now time.
     """
+    if origin is not None and origin not in ORIGINS:
+        raise ValueError(f"invalid origin filter: {origin!r} (one of {', '.join(ORIGINS)})")
+
     if now is None:
         now = datetime.now(timezone.utc)
     fix = await client.get_position()          # degrades to None when no fix
@@ -346,8 +352,11 @@ async def read_entries(
             kept.append(e)
 
     kept.sort(key=lambda e: e.get("datetime", ""))
+    tagged = [(e, derive_origin(e, agent_authors, auto_authors)) for e in kept]
+    if origin is not None:
+        tagged = [(e, o) for (e, o) in tagged if o == origin]
     entries = []
-    for n, e in enumerate(kept, start=1):
+    for n, (e, entry_origin) in enumerate(tagged, start=1):
         dt_str = e.get("datetime", "")
         pos_out, pos_display = _position_fields(e)
         try:
@@ -362,6 +371,7 @@ async def read_entries(
                 "text": e.get("text", ""),
                 "category": e.get("category", "navigation"),
                 "author": e.get("author"),
+                "origin": entry_origin,
                 "position": pos_out,
                 "position_display": pos_display,
             }

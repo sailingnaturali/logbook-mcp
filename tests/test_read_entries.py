@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from logbook_mcp.client import LogbookClient
-from logbook_mcp.tools import read_entries
+from logbook_mcp.tools import read_entries, derive_origin
 
 BASE = "http://test-sk:3000"
 API = f"{BASE}/plugins/signalk-logbook"
@@ -158,3 +158,68 @@ async def test_read_entries_unreachable_raises_clear_error(client):
     respx.get(f"{API}/logs/2026-06-05").mock(side_effect=httpx.ConnectError("boom"))
     with pytest.raises(RuntimeError, match="Logbook unavailable"):
         await read_entries(client, date="2026-06-05")
+
+
+AUTO_E = {
+    "datetime": "2026-07-09T23:07:19.758Z",
+    "text": "Warn: Inside 400m Approach Distance Prohibition (navigation.restrictedArea.x)",
+    "author": "",
+    "category": "navigation",
+}
+AGENT_E = {
+    "datetime": "2026-07-09T23:30:00.000Z",
+    "text": "[drill:mob] pass",
+    "author": "hermes",
+    "category": "drill",
+}
+HUMAN_E = {
+    "datetime": "2026-07-09T23:45:00.000Z",
+    "text": "Sunset over Boundary Pass",
+    "author": "Bryan Clark",
+    "category": "navigation",
+}
+EXPLICIT_E = {
+    "datetime": "2026-07-09T23:50:00.000Z",
+    "text": "Dictated note",
+    "author": "poseidon",
+    "origin": "manual",
+    "category": "navigation",
+}
+
+
+@respx.mock
+async def test_read_entries_derives_origin(client):
+    respx.get(f"{BASE}/signalk/v1/api/vessels/self/navigation/position").respond(404)
+    respx.get(f"{API}/logs/2026-07-09").respond(
+        200, json=[AUTO_E, AGENT_E, HUMAN_E, EXPLICIT_E]
+    )
+    respx.get(f"{API}/logs/2026-07-10").respond(404)
+
+    result = await read_entries(client, date="2026-07-09", fallback_tz="UTC")
+
+    origins = [e["origin"] for e in result["entries"]]
+    assert origins == ["auto", "agent", "manual", "manual"]
+
+
+@respx.mock
+async def test_read_entries_origin_filter(client):
+    respx.get(f"{BASE}/signalk/v1/api/vessels/self/navigation/position").respond(404)
+    respx.get(f"{API}/logs/2026-07-09").respond(
+        200, json=[AUTO_E, AGENT_E, HUMAN_E, EXPLICIT_E]
+    )
+    respx.get(f"{API}/logs/2026-07-10").respond(404)
+
+    result = await read_entries(
+        client, date="2026-07-09", fallback_tz="UTC", origin="manual"
+    )
+
+    assert result["count"] == 2
+    assert [e["text"] for e in result["entries"]] == [
+        "Sunset over Boundary Pass",
+        "Dictated note",
+    ]
+
+
+async def test_read_entries_rejects_bad_origin_filter(client):
+    with pytest.raises(ValueError):
+        await read_entries(client, date="2026-07-09", origin="human")
