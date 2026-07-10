@@ -5,7 +5,7 @@ import pytest
 import respx
 
 from logbook_mcp.client import LogbookClient
-from logbook_mcp.tools import read_entries, derive_origin
+from logbook_mcp.tools import read_entries
 
 BASE = "http://test-sk:3000"
 API = f"{BASE}/plugins/signalk-logbook"
