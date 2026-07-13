@@ -20,7 +20,7 @@ def validate_date(date: str) -> None:
 class LogbookClient:
     """Async client for signalk-logbook on a SignalK server.
 
-    ``base_url`` is the SignalK server root (e.g. http://naturalaspi.local:3000);
+    ``base_url`` is the SignalK server root (e.g. http://naturalaspi:3000);
     plugin routes live under /plugins/signalk-logbook. Writes require a SignalK
     access token, sent as ``Authorization: Bearer {token}``.
     """

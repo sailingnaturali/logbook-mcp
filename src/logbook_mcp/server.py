@@ -28,7 +28,7 @@ def _parse_authors(raw: str) -> frozenset[str]:
 
 
 def _env_config() -> tuple[str, str | None, str, float, frozenset[str], frozenset[str]]:
-    url = os.environ.get("LOGBOOK_SK_URL", "http://naturalaspi.local:3000")
+    url = os.environ.get("LOGBOOK_SK_URL", "http://naturalaspi:3000")
     token = os.environ.get("LOGBOOK_SK_TOKEN")
     tz = os.environ.get("LOGBOOK_TZ", FALLBACK_TZ)
     timeout = float(os.environ.get("LOGBOOK_TIMEOUT", "5.0"))

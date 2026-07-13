@@ -23,7 +23,7 @@ pytestmark = pytest.mark.skipif(
     reason="set LOGBOOK_INTEGRATION=1 (and LOGBOOK_SK_TOKEN) to run against the Pi",
 )
 
-SK_URL = os.environ.get("LOGBOOK_SK_URL", "http://naturalaspi.local:3000")
+SK_URL = os.environ.get("LOGBOOK_SK_URL", "http://naturalaspi:3000")
 
 
 @pytest.fixture

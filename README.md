@@ -32,13 +32,13 @@ uv tool install logbook-mcp
 ## Configuration
 
 ```bash
-export LOGBOOK_SK_URL=http://naturalaspi.local:3000   # SignalK server root
+export LOGBOOK_SK_URL=http://naturalaspi:3000   # SignalK server root
 export LOGBOOK_SK_TOKEN=...                            # SignalK access token (write)
 export LOGBOOK_TZ=America/Vancouver                    # fallback timezone
 logbook-mcp
 ```
 
-Replace `naturalaspi.local` with your SignalK server's hostname. The token must
+Replace `naturalaspi` with your SignalK server's hostname. The token must
 belong to an **admin** user — signalk-server gates all `/plugins/*` routes behind
 admin auth (`adminAuthenticationMiddleware` in `tokensecurity.ts`), so device
 tokens and read/write user tokens receive 401. Without a valid token, writes
